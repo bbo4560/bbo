@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using Dapper;
+using Npgsql;
 
 namespace Test1
 {
@@ -10,6 +12,7 @@ namespace Test1
     {
         public class OperationLogEntry
         {
+            public int Id { get; set; }
             public DateTime Timestamp { get; set; }
             public string OperationType { get; set; } = string.Empty;
             public string Target { get; set; } = string.Empty;
@@ -28,6 +31,29 @@ namespace Test1
         {
             WriteIndented = false
         };
+
+        private static readonly string DbConnStr = "Host=192.168.43.93;Username=postgres;Password=1234;Database=panellogdb";
+
+        private static void EnsureOperationLogsTableExists()
+        {
+            try
+            {
+                using var conn = new NpgsqlConnection(DbConnStr);
+                conn.Open();
+                string sql = @"CREATE TABLE IF NOT EXISTS operation_logs (
+                               id SERIAL PRIMARY KEY,
+                               timestamp TIMESTAMP NOT NULL,
+                               operation_type VARCHAR(100) NOT NULL,
+                               target TEXT NOT NULL,
+                               detail TEXT
+                            );";
+                conn.Execute(sql);
+            }
+            catch
+            {
+                // 如果資料庫連接失敗，忽略錯誤，將使用本地檔案備份
+            }
+        }
 
         public static string DescribeChanges(PanelLog before, PanelLog after)
         {
@@ -54,73 +80,111 @@ namespace Test1
                 Detail = detail
             };
 
-            var line = JsonSerializer.Serialize(entry, SerializerOptions);
-
+            // 優先寫入資料庫
             try
             {
-                lock (SyncRoot)
-                {
-                    if (!Directory.Exists(LogDirectory))
-                    {
-                        Directory.CreateDirectory(LogDirectory);
-                    }
-
-                    File.AppendAllText(InternalLogFilePath, line + Environment.NewLine, Encoding.UTF8);
-                }
+                EnsureOperationLogsTableExists();
+                using var conn = new NpgsqlConnection(DbConnStr);
+                conn.Open();
+                conn.Execute(
+                    "INSERT INTO operation_logs (timestamp, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
+                    new { entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
             }
             catch
             {
+                // 如果資料庫寫入失敗，寫入本地檔案作為備份
+                var line = JsonSerializer.Serialize(entry, SerializerOptions);
+                try
+                {
+                    lock (SyncRoot)
+                    {
+                        if (!Directory.Exists(LogDirectory))
+                        {
+                            Directory.CreateDirectory(LogDirectory);
+                        }
+                        File.AppendAllText(InternalLogFilePath, line + Environment.NewLine, Encoding.UTF8);
+                    }
+                }
+                catch
+                {
+                }
             }
         }
 
         public static IReadOnlyList<OperationLogEntry> ReadAll()
         {
             var entries = new List<OperationLogEntry>();
+            
+            // 優先從資料庫讀取
             try
             {
-                lock (SyncRoot)
-                {
-                    if (!File.Exists(InternalLogFilePath))
-                        return entries;
-
-                    foreach (var line in File.ReadLines(InternalLogFilePath, Encoding.UTF8))
-                    {
-                        if (string.IsNullOrWhiteSpace(line))
-                            continue;
-                        try
-                        {
-                            var entry = JsonSerializer.Deserialize<OperationLogEntry>(line, SerializerOptions);
-                            if (entry != null)
-                            {
-                                entries.Add(entry);
-                            }
-                        }
-                        catch
-                        {
-                        }
-                    }
-                }
+                using var conn = new NpgsqlConnection(DbConnStr);
+                conn.Open();
+                var dbEntries = conn.Query<OperationLogEntry>(
+                    "SELECT id, timestamp AS Timestamp, operation_type AS OperationType, target AS Target, detail AS Detail FROM operation_logs ORDER BY timestamp ASC");
+                entries.AddRange(dbEntries);
             }
             catch
             {
+                // 如果資料庫讀取失敗，從本地檔案讀取
+                try
+                {
+                    lock (SyncRoot)
+                    {
+                        if (!File.Exists(InternalLogFilePath))
+                            return entries;
+
+                        foreach (var line in File.ReadLines(InternalLogFilePath, Encoding.UTF8))
+                        {
+                            if (string.IsNullOrWhiteSpace(line))
+                                continue;
+                            try
+                            {
+                                var entry = JsonSerializer.Deserialize<OperationLogEntry>(line, SerializerOptions);
+                                if (entry != null)
+                                {
+                                    entries.Add(entry);
+                                }
+                            }
+                            catch
+                            {
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                }
             }
+            
             return entries;
         }
 
         public static void Clear()
         {
+            // 優先清除資料庫中的紀錄
             try
             {
-                lock (SyncRoot)
-                {
-                    if (File.Exists(InternalLogFilePath))
-                    {
-                        File.Delete(InternalLogFilePath);
-                    }
-                }
+                using var conn = new NpgsqlConnection(DbConnStr);
+                conn.Open();
+                conn.Execute("DELETE FROM operation_logs");
             }
             catch
             {
+                // 如果資料庫清除失敗，清除本地檔案
+                try
+                {
+                    lock (SyncRoot)
+                    {
+                        if (File.Exists(InternalLogFilePath))
+                        {
+                            File.Delete(InternalLogFilePath);
+                        }
+                    }
+                }
+                catch
+                {
+                }
             }
         }
     }
