@@ -28,13 +28,21 @@ namespace Test1
             try
             {
                 LogEntries.Clear();
+                
+                // 先檢查資料庫連接
+                int dbCount = OperationLogger.GetDatabaseRecordCount();
+                string dbStatus = dbCount >= 0 ? $"資料庫: {dbCount} 筆" : "資料庫: 連接失敗";
+                
                 var entries = OperationLogger.ReadAll().OrderBy(entry => entry.Timestamp).ToList();
+                
+                System.Diagnostics.Debug.WriteLine($"讀取到 {entries.Count} 筆操作紀錄");
+                
                 foreach (var entry in entries)
                 {
                     LogEntries.Add(entry);
                 }
 
-                StatusText.Text = $"紀錄筆數: {LogEntries.Count} 筆";
+                StatusText.Text = $"紀錄筆數: {LogEntries.Count} 筆 ({dbStatus})";
                 if (LogEntries.Count == 0)
                 {
                     StatusText.Text += "（尚無資料）";
@@ -49,7 +57,9 @@ namespace Test1
             {
                 LogEntries.Clear();
                 StatusText.Text = "讀取失敗";
-                MessageBox.Show($"讀取操作紀錄時發生錯誤：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Diagnostics.Debug.WriteLine($"讀取操作紀錄時發生錯誤: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"堆疊追蹤: {ex.StackTrace}");
+                MessageBox.Show($"讀取操作紀錄時發生錯誤：{ex.Message}\n\n詳細資訊請查看 Debug 輸出。", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
        

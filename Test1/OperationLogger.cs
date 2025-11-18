@@ -133,13 +133,26 @@ namespace Test1
                 EnsureOperationLogsTableExists();
                 using var conn = new NpgsqlConnection(DbConnStr);
                 conn.Open();
-                dbEntries = conn.Query<OperationLogEntry>(
-                    "SELECT id, timestamp AS Timestamp, operation_type AS OperationType, target AS Target, detail AS Detail FROM operation_logs ORDER BY timestamp ASC").ToList();
+                
+                // 使用 SQL 別名確保正確映射到 C# 屬性（Dapper 預設區分大小寫）
+                var sql = @"SELECT 
+                    id AS Id,
+                    timestamp AS Timestamp,
+                    operation_type AS OperationType,
+                    target AS Target,
+                    detail AS Detail
+                    FROM operation_logs 
+                    ORDER BY timestamp ASC";
+                
+                dbEntries = conn.Query<OperationLogEntry>(sql).ToList();
+                
+                System.Diagnostics.Debug.WriteLine($"從資料庫讀取到 {dbEntries.Count} 筆操作紀錄");
             }
             catch (Exception ex)
             {
                 // 資料庫讀取失敗，記錄但不中斷
                 System.Diagnostics.Debug.WriteLine($"資料庫讀取操作紀錄失敗: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"堆疊追蹤: {ex.StackTrace}");
             }
             
             // 從本地檔案讀取（作為備份或補充）
@@ -210,7 +223,28 @@ namespace Test1
             }
             
             entries = allEntries.Values.OrderBy(e => e.Timestamp).ToList();
+            
+            System.Diagnostics.Debug.WriteLine($"合併後總共 {entries.Count} 筆操作紀錄（資料庫: {dbEntries.Count}, 本地檔案: {fileEntries.Count}）");
+            
             return entries;
+        }
+        
+        /// <summary>
+        /// 測試資料庫連接並返回資料庫中的操作紀錄數量
+        /// </summary>
+        public static int GetDatabaseRecordCount()
+        {
+            try
+            {
+                using var conn = new NpgsqlConnection(DbConnStr);
+                conn.Open();
+                var count = conn.ExecuteScalar<int>("SELECT COUNT(*) FROM operation_logs");
+                return count;
+            }
+            catch
+            {
+                return -1; // 表示連接失敗
+            }
         }
 
         public static void Clear()
