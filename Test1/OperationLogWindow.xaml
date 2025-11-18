@@ -24,6 +24,13 @@
                              Background="White">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Cursor="">
                 
+                <Button Content="刷新"
+                        Click="RefreshLog_Click"
+                        FontSize="16"
+                        Width="90"
+                        Height="36"
+                        Margin="0,0,8,0"
+                        Style="{StaticResource MaterialDesignRaisedButton}"/>
                 <Button Content="清除紀錄"
                         Click="ClearLog_Click"
                         FontSize="16"

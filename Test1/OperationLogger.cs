@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using Dapper;
@@ -80,6 +81,8 @@ namespace Test1
                 Detail = detail
             };
 
+            bool dbSuccess = false;
+            
             // 優先寫入資料庫
             try
             {
@@ -89,10 +92,17 @@ namespace Test1
                 conn.Execute(
                     "INSERT INTO operation_logs (timestamp, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
                     new { entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
+                dbSuccess = true;
             }
-            catch
+            catch (Exception ex)
             {
-                // 如果資料庫寫入失敗，寫入本地檔案作為備份
+                // 資料庫寫入失敗，記錄錯誤
+                System.Diagnostics.Debug.WriteLine($"資料庫寫入操作紀錄失敗: {ex.Message}");
+            }
+            
+            // 如果資料庫寫入失敗，寫入本地檔案作為備份
+            if (!dbSuccess)
+            {
                 var line = JsonSerializer.Serialize(entry, SerializerOptions);
                 try
                 {
@@ -114,26 +124,31 @@ namespace Test1
         public static IReadOnlyList<OperationLogEntry> ReadAll()
         {
             var entries = new List<OperationLogEntry>();
+            var dbEntries = new List<OperationLogEntry>();
+            var fileEntries = new List<OperationLogEntry>();
             
-            // 優先從資料庫讀取
+            // 從資料庫讀取
             try
             {
+                EnsureOperationLogsTableExists();
                 using var conn = new NpgsqlConnection(DbConnStr);
                 conn.Open();
-                var dbEntries = conn.Query<OperationLogEntry>(
-                    "SELECT id, timestamp AS Timestamp, operation_type AS OperationType, target AS Target, detail AS Detail FROM operation_logs ORDER BY timestamp ASC");
-                entries.AddRange(dbEntries);
+                dbEntries = conn.Query<OperationLogEntry>(
+                    "SELECT id, timestamp AS Timestamp, operation_type AS OperationType, target AS Target, detail AS Detail FROM operation_logs ORDER BY timestamp ASC").ToList();
             }
-            catch
+            catch (Exception ex)
             {
-                // 如果資料庫讀取失敗，從本地檔案讀取
-                try
+                // 資料庫讀取失敗，記錄但不中斷
+                System.Diagnostics.Debug.WriteLine($"資料庫讀取操作紀錄失敗: {ex.Message}");
+            }
+            
+            // 從本地檔案讀取（作為備份或補充）
+            try
+            {
+                lock (SyncRoot)
                 {
-                    lock (SyncRoot)
+                    if (File.Exists(InternalLogFilePath))
                     {
-                        if (!File.Exists(InternalLogFilePath))
-                            return entries;
-
                         foreach (var line in File.ReadLines(InternalLogFilePath, Encoding.UTF8))
                         {
                             if (string.IsNullOrWhiteSpace(line))
@@ -143,7 +158,7 @@ namespace Test1
                                 var entry = JsonSerializer.Deserialize<OperationLogEntry>(line, SerializerOptions);
                                 if (entry != null)
                                 {
-                                    entries.Add(entry);
+                                    fileEntries.Add(entry);
                                 }
                             }
                             catch
@@ -152,11 +167,49 @@ namespace Test1
                         }
                     }
                 }
-                catch
+            }
+            catch
+            {
+            }
+            
+            // 合併資料庫和本地檔案的紀錄，去除重複（根據時間戳和操作類型）
+            var allEntries = new Dictionary<string, OperationLogEntry>();
+            
+            // 先添加資料庫的紀錄
+            foreach (var entry in dbEntries)
+            {
+                var key = $"{entry.Timestamp:yyyyMMddHHmmss}_{entry.OperationType}_{entry.Target}";
+                if (!allEntries.ContainsKey(key))
                 {
+                    allEntries[key] = entry;
                 }
             }
             
+            // 再添加本地檔案的紀錄（如果資料庫中沒有）
+            foreach (var entry in fileEntries)
+            {
+                var key = $"{entry.Timestamp:yyyyMMddHHmmss}_{entry.OperationType}_{entry.Target}";
+                if (!allEntries.ContainsKey(key))
+                {
+                    allEntries[key] = entry;
+                    // 嘗試將本地檔案的紀錄遷移到資料庫
+                    try
+                    {
+                        EnsureOperationLogsTableExists();
+                        using var conn = new NpgsqlConnection(DbConnStr);
+                        conn.Open();
+                        conn.Execute(
+                            "INSERT INTO operation_logs (timestamp, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
+                            new { entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
+                    }
+                    catch
+                    {
+                        // 遷移失敗，忽略
+                    }
+                }
+            }
+            
+            entries = allEntries.Values.OrderBy(e => e.Timestamp).ToList();
             return entries;
         }
 

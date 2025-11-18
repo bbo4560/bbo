@@ -74,6 +74,11 @@ namespace Test1
             }
         }
 
+        private void RefreshLog_Click(object sender, RoutedEventArgs e)
+        {
+            LoadLog();
+        }
+
         private void Close_Click(object sender, RoutedEventArgs e)
         {
             Close();
