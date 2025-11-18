@@ -94,7 +94,6 @@ namespace Test1
 
         private void SaveAndUpdateTime()
         {
-            // 目前保留本地寫入，但更新UI時間改為讀資料庫的時間
             lastUpdateTime = DateTime.Now;
             appConfig.UpdateLastUpdateTime(lastUpdateTime);
             UpdateTimeFromDb();
@@ -115,7 +114,7 @@ namespace Test1
             {
                 btnAdd.IsEnabled = true;
                 btnImport.IsEnabled = true;
-                LogsDataGrid.IsReadOnly = false; // 修改時可用
+                LogsDataGrid.IsReadOnly = false;
             }
 
             if (DataContext is PanelLogViewModel vm)

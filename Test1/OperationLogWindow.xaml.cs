@@ -29,7 +29,8 @@ namespace Test1
             {
                 LogEntries.Clear();
                 
-                // 先檢查資料庫連接
+                OperationLogger.MigrateLocalFileToDatabase();
+                
                 int dbCount = OperationLogger.GetDatabaseRecordCount();
                 string dbStatus = dbCount >= 0 ? $"資料庫: {dbCount} 筆" : "資料庫: 連接失敗";
                 

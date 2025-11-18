@@ -52,7 +52,6 @@ namespace Test1
             }
             catch
             {
-                // 如果資料庫連接失敗，忽略錯誤，將使用本地檔案備份
             }
         }
 
@@ -83,7 +82,7 @@ namespace Test1
 
             bool dbSuccess = false;
             
-            // 優先寫入資料庫
+            
             try
             {
                 EnsureOperationLogsTableExists();
@@ -96,11 +95,9 @@ namespace Test1
             }
             catch (Exception ex)
             {
-                // 資料庫寫入失敗，記錄錯誤
                 System.Diagnostics.Debug.WriteLine($"資料庫寫入操作紀錄失敗: {ex.Message}");
             }
             
-            // 如果資料庫寫入失敗，寫入本地檔案作為備份
             if (!dbSuccess)
             {
                 var line = JsonSerializer.Serialize(entry, SerializerOptions);
@@ -127,14 +124,12 @@ namespace Test1
             var dbEntries = new List<OperationLogEntry>();
             var fileEntries = new List<OperationLogEntry>();
             
-            // 從資料庫讀取
             try
             {
                 EnsureOperationLogsTableExists();
                 using var conn = new NpgsqlConnection(DbConnStr);
                 conn.Open();
                 
-                // 使用 SQL 別名確保正確映射到 C# 屬性（Dapper 預設區分大小寫）
                 var sql = @"SELECT 
                     id AS Id,
                     timestamp AS Timestamp,
@@ -150,12 +145,10 @@ namespace Test1
             }
             catch (Exception ex)
             {
-                // 資料庫讀取失敗，記錄但不中斷
                 System.Diagnostics.Debug.WriteLine($"資料庫讀取操作紀錄失敗: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"堆疊追蹤: {ex.StackTrace}");
             }
             
-            // 從本地檔案讀取（作為備份或補充）
             try
             {
                 lock (SyncRoot)
@@ -185,10 +178,8 @@ namespace Test1
             {
             }
             
-            // 合併資料庫和本地檔案的紀錄，去除重複（根據時間戳和操作類型）
             var allEntries = new Dictionary<string, OperationLogEntry>();
             
-            // 先添加資料庫的紀錄
             foreach (var entry in dbEntries)
             {
                 var key = $"{entry.Timestamp:yyyyMMddHHmmss}_{entry.OperationType}_{entry.Target}";
@@ -198,27 +189,42 @@ namespace Test1
                 }
             }
             
-            // 再添加本地檔案的紀錄（如果資料庫中沒有）
+            var entriesToMigrate = new List<OperationLogEntry>();
             foreach (var entry in fileEntries)
             {
                 var key = $"{entry.Timestamp:yyyyMMddHHmmss}_{entry.OperationType}_{entry.Target}";
                 if (!allEntries.ContainsKey(key))
                 {
                     allEntries[key] = entry;
-                    // 嘗試將本地檔案的紀錄遷移到資料庫
-                    try
+                    entriesToMigrate.Add(entry);
+                }
+            }
+            
+            if (entriesToMigrate.Count > 0)
+            {
+                try
+                {
+                    EnsureOperationLogsTableExists();
+                    using var conn = new NpgsqlConnection(DbConnStr);
+                    conn.Open();
+                    foreach (var entry in entriesToMigrate)
                     {
-                        EnsureOperationLogsTableExists();
-                        using var conn = new NpgsqlConnection(DbConnStr);
-                        conn.Open();
-                        conn.Execute(
-                            "INSERT INTO operation_logs (timestamp, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
-                            new { entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
+                        try
+                        {
+                            conn.Execute(
+                                "INSERT INTO operation_logs (timestamp, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
+                                new { entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"遷移操作紀錄失敗: {ex.Message}");
+                        }
                     }
-                    catch
-                    {
-                        // 遷移失敗，忽略
-                    }
+                    System.Diagnostics.Debug.WriteLine($"成功遷移 {entriesToMigrate.Count} 筆本地檔案紀錄到資料庫");
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"批量遷移操作紀錄失敗: {ex.Message}");
                 }
             }
             
@@ -229,9 +235,6 @@ namespace Test1
             return entries;
         }
         
-        /// <summary>
-        /// 測試資料庫連接並返回資料庫中的操作紀錄數量
-        /// </summary>
         public static int GetDatabaseRecordCount()
         {
             try
@@ -243,13 +246,81 @@ namespace Test1
             }
             catch
             {
-                return -1; // 表示連接失敗
+                return -1;
+            }
+        }
+
+        public static void MigrateLocalFileToDatabase()
+        {
+            try
+            {
+                lock (SyncRoot)
+                {
+                    if (!File.Exists(InternalLogFilePath))
+                        return;
+                    
+                    var fileEntries = new List<OperationLogEntry>();
+                    foreach (var line in File.ReadLines(InternalLogFilePath, Encoding.UTF8))
+                    {
+                        if (string.IsNullOrWhiteSpace(line))
+                            continue;
+                        try
+                        {
+                            var entry = JsonSerializer.Deserialize<OperationLogEntry>(line, SerializerOptions);
+                            if (entry != null)
+                            {
+                                fileEntries.Add(entry);
+                            }
+                        }
+                        catch
+                        {
+                        }
+                    }
+                    
+                    if (fileEntries.Count == 0)
+                        return;
+                    
+                    EnsureOperationLogsTableExists();
+                    using var conn = new NpgsqlConnection(DbConnStr);
+                    conn.Open();
+                    
+                    int successCount = 0;
+                    foreach (var entry in fileEntries)
+                    {
+                        try
+                        {
+                            var existing = conn.QueryFirstOrDefault<int?>(
+                                "SELECT id FROM operation_logs WHERE timestamp = @Timestamp AND operation_type = @OperationType AND target = @Target",
+                                new { entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target });
+                            
+                            if (existing == null)
+                            {
+                                conn.Execute(
+                                    "INSERT INTO operation_logs (timestamp, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
+                                    new { entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
+                                successCount++;
+                            }
+                        }
+                        catch
+                        {
+                        }
+                    }
+                    
+                    if (successCount > 0)
+                    {
+                        File.Delete(InternalLogFilePath);
+                        System.Diagnostics.Debug.WriteLine($"成功遷移 {successCount} 筆本地檔案紀錄到資料庫，並刪除本地檔案");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"遷移本地檔案到資料庫失敗: {ex.Message}");
             }
         }
 
         public static void Clear()
         {
-            // 優先清除資料庫中的紀錄
             try
             {
                 using var conn = new NpgsqlConnection(DbConnStr);
@@ -258,7 +329,6 @@ namespace Test1
             }
             catch
             {
-                // 如果資料庫清除失敗，清除本地檔案
                 try
                 {
                     lock (SyncRoot)
