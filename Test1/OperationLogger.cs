@@ -18,6 +18,7 @@ namespace Test1
             public string OperationType { get; set; } = string.Empty;
             public string Target { get; set; } = string.Empty;
             public string? Detail { get; set; }
+            public string HostName { get; set; } = string.Empty;
         }
 
         private static readonly object SyncRoot = new object();
@@ -52,48 +53,18 @@ namespace Test1
                                    timestamp TIMESTAMP NOT NULL,
                                    operation_type VARCHAR(100) NOT NULL,
                                    target TEXT NOT NULL,
-                                   detail TEXT
+                                   detail TEXT,
+                                   host_name VARCHAR(100)
                                 );";
                     conn.Execute(sql);
                 }
                 else
                 {
-                    var hasTimestamp = conn.ExecuteScalar<int>(
-                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'timestamp'") > 0;
-
-                    if (!hasTimestamp)
+                    var hasHostName = conn.ExecuteScalar<int>(
+                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'host_name'") > 0;
+                    if (!hasHostName)
                     {
-                        conn.Execute("ALTER TABLE operation_logs ADD COLUMN timestamp TIMESTAMP");
-                        conn.Execute("UPDATE operation_logs SET timestamp = NOW() WHERE timestamp IS NULL");
-                        conn.Execute("ALTER TABLE operation_logs ALTER COLUMN timestamp SET NOT NULL");
-                    }
-
-                    var hasOperationType = conn.ExecuteScalar<int>(
-                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'operation_type'") > 0;
-
-                    if (!hasOperationType)
-                    {
-                        conn.Execute("ALTER TABLE operation_logs ADD COLUMN operation_type VARCHAR(100)");
-                        conn.Execute("UPDATE operation_logs SET operation_type = '' WHERE operation_type IS NULL");
-                        conn.Execute("ALTER TABLE operation_logs ALTER COLUMN operation_type SET NOT NULL");
-                    }
-
-                    var hasTarget = conn.ExecuteScalar<int>(
-                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'target'") > 0;
-
-                    if (!hasTarget)
-                    {
-                        conn.Execute("ALTER TABLE operation_logs ADD COLUMN target TEXT");
-                        conn.Execute("UPDATE operation_logs SET target = '' WHERE target IS NULL");
-                        conn.Execute("ALTER TABLE operation_logs ALTER COLUMN target SET NOT NULL");
-                    }
-
-                    var hasDetail = conn.ExecuteScalar<int>(
-                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'detail'") > 0;
-
-                    if (!hasDetail)
-                    {
-                        conn.Execute("ALTER TABLE operation_logs ADD COLUMN detail TEXT");
+                        conn.Execute("ALTER TABLE operation_logs ADD COLUMN host_name VARCHAR(100)");
                     }
                 }
             }
@@ -103,21 +74,6 @@ namespace Test1
             }
         }
 
-        public static string DescribeChanges(PanelLog before, PanelLog after)
-        {
-            var changes = new List<string>();
-            if (before.Panel_ID != after.Panel_ID)
-                changes.Add($"PanelID: {before.Panel_ID} -> {after.Panel_ID}");
-            if (before.LOT_ID != after.LOT_ID)
-                changes.Add($"LOTID: {before.LOT_ID} -> {after.LOT_ID}");
-            if (before.Carrier_ID != after.Carrier_ID)
-                changes.Add($"CarrierID: {before.Carrier_ID} -> {after.Carrier_ID}");
-            if (before.Time != after.Time)
-                changes.Add($"Time: {before.Time:yyyy/MM/dd HH:mm:ss} -> {after.Time:yyyy/MM/dd HH:mm:ss}");
-
-            return changes.Count > 0 ? string.Join(", ", changes) : "未變更";
-        }
-
         public static void Log(string operationType, string target, string? detail = null, DateTime? timestamp = null)
         {
             var entry = new OperationLogEntry
@@ -125,10 +81,10 @@ namespace Test1
                 Timestamp = timestamp ?? DateTime.Now,
                 OperationType = operationType,
                 Target = target,
-                Detail = detail
+                Detail = detail,
+                HostName = Environment.MachineName
             };
 
-            // 補值確保 timestamp 一定合法
             if (entry.Timestamp == default(DateTime) || entry.Timestamp == DateTime.MinValue)
             {
                 entry.Timestamp = DateTime.Now;
@@ -143,8 +99,9 @@ namespace Test1
                 conn.Open();
 
                 conn.Execute(
-                    "INSERT INTO operation_logs (timestamp, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
-                    new { Timestamp = entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
+                    "INSERT INTO operation_logs (timestamp, operation_type, target, detail, host_name) VALUES (@Timestamp, @OperationType, @Target, @Detail, @HostName)",
+                    new { Timestamp = entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail, HostName = entry.HostName });
+
                 dbSuccess = true;
             }
             catch (Exception ex)
@@ -185,13 +142,14 @@ namespace Test1
                 conn.Open();
 
                 var sql = @"SELECT 
-                    id AS Id,
-                    timestamp AS Timestamp,
-                    operation_type AS OperationType,
-                    target AS Target,
-                    detail AS Detail
-                    FROM operation_logs 
-                    ORDER BY timestamp ASC";
+                            id AS Id,
+                            timestamp AS Timestamp,
+                            operation_type AS OperationType,
+                            target AS Target,
+                            detail AS Detail,
+                            host_name AS HostName
+                            FROM operation_logs
+                            ORDER BY timestamp ASC";
 
                 dbEntries = conn.Query<OperationLogEntry>(sql).ToList();
 
@@ -220,6 +178,8 @@ namespace Test1
                                 {
                                     if (entry.Timestamp == default(DateTime) || entry.Timestamp == DateTime.MinValue)
                                         entry.Timestamp = DateTime.Now;
+                                    if (string.IsNullOrEmpty(entry.HostName))
+                                        entry.HostName = Environment.MachineName;
                                     fileEntries.Add(entry);
                                 }
                             }
@@ -270,10 +230,12 @@ namespace Test1
                         {
                             if (entry.Timestamp == default(DateTime) || entry.Timestamp == DateTime.MinValue)
                                 entry.Timestamp = DateTime.Now;
+                            if (string.IsNullOrEmpty(entry.HostName))
+                                entry.HostName = Environment.MachineName;
 
                             conn.Execute(
-                                "INSERT INTO operation_logs (timestamp, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
-                                new { Timestamp = entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
+                                "INSERT INTO operation_logs (timestamp, operation_type, target, detail, host_name) VALUES (@Timestamp, @OperationType, @Target, @Detail, @HostName)",
+                                new { Timestamp = entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail, HostName = entry.HostName });
                         }
                         catch (Exception ex)
                         {
@@ -332,6 +294,9 @@ namespace Test1
                             {
                                 if (entry.Timestamp == default(DateTime) || entry.Timestamp == DateTime.MinValue)
                                     entry.Timestamp = DateTime.Now;
+                                if (string.IsNullOrEmpty(entry.HostName))
+                                    entry.HostName = Environment.MachineName;
+
                                 fileEntries.Add(entry);
                             }
                         }
@@ -354,6 +319,8 @@ namespace Test1
                         {
                             if (entry.Timestamp == default(DateTime) || entry.Timestamp == DateTime.MinValue)
                                 entry.Timestamp = DateTime.Now;
+                            if (string.IsNullOrEmpty(entry.HostName))
+                                entry.HostName = Environment.MachineName;
 
                             var existing = conn.QueryFirstOrDefault<int?>(
                                 "SELECT id FROM operation_logs WHERE timestamp = @Timestamp AND operation_type = @OperationType AND target = @Target",
@@ -362,8 +329,8 @@ namespace Test1
                             if (existing == null)
                             {
                                 conn.Execute(
-                                    "INSERT INTO operation_logs (timestamp, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
-                                    new { Timestamp = entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
+                                    "INSERT INTO operation_logs (timestamp, operation_type, target, detail, host_name) VALUES (@Timestamp, @OperationType, @Target, @Detail, @HostName)",
+                                    new { Timestamp = entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail, HostName = entry.HostName });
                                 successCount++;
                             }
                         }
@@ -386,6 +353,22 @@ namespace Test1
                 System.Diagnostics.Debug.WriteLine($"遷移本地檔案到資料庫失敗: {ex.Message}");
             }
         }
+
+        public static string DescribeChanges(PanelLog before, PanelLog after)
+        {
+            var changes = new List<string>();
+            if (before.Panel_ID != after.Panel_ID)
+                changes.Add($"PanelID: {before.Panel_ID} -> {after.Panel_ID}");
+            if (before.LOT_ID != after.LOT_ID)
+                changes.Add($"LOTID: {before.LOT_ID} -> {after.LOT_ID}");
+            if (before.Carrier_ID != after.Carrier_ID)
+                changes.Add($"CarrierID: {before.Carrier_ID} -> {after.Carrier_ID}");
+            if (before.Time != after.Time)
+                changes.Add($"Time: {before.Time:yyyy/MM/dd HH:mm:ss} -> {after.Time:yyyy/MM/dd HH:mm:ss}");
+
+            return changes.Count > 0 ? string.Join(", ", changes) : "未變更";
+        }
+
 
         public static void Clear()
         {
@@ -414,4 +397,5 @@ namespace Test1
         }
     }
 }
+
 
