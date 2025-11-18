@@ -32,7 +32,6 @@ namespace Test1
             {
                 InitializeComponent();
                 DataContext = tempVm;
-                
             }
             catch (Exception ex)
             {
@@ -62,7 +61,7 @@ namespace Test1
                         {
                             MessageBox.Show($"資料庫連接失敗：無法連接到資料庫。\n\n應用程式將以離線模式運行。\n請確認 PostgreSQL 服務是否正在運行。", "資料庫錯誤", MessageBoxButton.OK, MessageBoxImage.Warning);
                         }
-                        UpdateTimeNow();
+                        UpdateTimeFromDb();
                     });
                 }
                 catch (Exception ex)
@@ -70,32 +69,35 @@ namespace Test1
                     Dispatcher.Invoke(() =>
                     {
                         MessageBox.Show($"資料庫連接失敗：{ex.Message}\n\n應用程式將以離線模式運行。\n請確認 PostgreSQL 服務是否正在運行。", "資料庫錯誤", MessageBoxButton.OK, MessageBoxImage.Warning);
-                        UpdateTimeNow();
+                        UpdateTimeFromDb();
                     });
                 }
             });
         }
 
-
-
-        private void UpdateTimeNow()
+        public void UpdateTimeFromDb()
         {
             if (!Dispatcher.CheckAccess())
             {
-                Dispatcher.Invoke(UpdateTimeNow);
+                Dispatcher.Invoke(UpdateTimeFromDb);
                 return;
             }
-            if (lastUpdateTime == DateTime.MinValue)
-                txtUpdateTime.Text = "尚未有資料更新";
-            else
-                txtUpdateTime.Text = "最後更新時間: " + lastUpdateTime.ToString("yyyy/MM/dd HH:mm:ss");
+            if (DataContext is PanelLogViewModel vm && vm.Repo != null)
+            {
+                var dbTime = vm.Repo.GetLastUpdateTimeFromDb();
+                if (dbTime.HasValue)
+                    txtUpdateTime.Text = "最後更新時間: " + dbTime.Value.ToString("yyyy/MM/dd HH:mm:ss");
+                else
+                    txtUpdateTime.Text = "尚未有資料更新";
+            }
         }
 
         private void SaveAndUpdateTime()
         {
+            // 目前保留本地寫入，但更新UI時間改為讀資料庫的時間
             lastUpdateTime = DateTime.Now;
             appConfig.UpdateLastUpdateTime(lastUpdateTime);
-            UpdateTimeNow();
+            UpdateTimeFromDb();
         }
 
         private void ApplyUserPermissions()
@@ -107,15 +109,13 @@ namespace Test1
             {
                 btnAdd.IsEnabled = false;
                 btnImport.IsEnabled = false;
-                
                 LogsDataGrid.IsReadOnly = true;
             }
             else if (isAdmin)
             {
                 btnAdd.IsEnabled = true;
                 btnImport.IsEnabled = true;
-                
-                LogsDataGrid.IsReadOnly = true;
+                LogsDataGrid.IsReadOnly = false; // 修改時可用
             }
 
             if (DataContext is PanelLogViewModel vm)
@@ -128,7 +128,7 @@ namespace Test1
         {
             Application.Current.Shutdown();
         }
-       
+
         private void OpenSearchWindow(object sender, RoutedEventArgs e)
         {
             var dialog = new Window3 { Owner = this };
@@ -153,7 +153,9 @@ namespace Test1
                 var newItem = dialog.NewPanelLog;
                 if (newItem != null)
                 {
-                    (DataContext as PanelLogViewModel)?.AddPanelLogFromOther(newItem);
+                    var vm = DataContext as PanelLogViewModel;
+                    vm?.AddPanelLogFromOther(newItem);
+                    vm?.Reload();
                     SaveAndUpdateTime();
                 }
             }
@@ -172,7 +174,7 @@ namespace Test1
                     vm.UserRole = userRole;
                 }
                 MessageBox.Show($"已切換使用者，角色：{userRole}", "切換成功", MessageBoxButton.OK, MessageBoxImage.Information);
-                OperationLogger.Log("切換使用者",$"使用者:{oldRole}->{userRole}",$"切換時間={DateTime.Now:yyyy/MM/dd HH:mm:ss}");
+                OperationLogger.Log("切換使用者", $"使用者:{oldRole}->{userRole}", $"切換時間={DateTime.Now:yyyy/MM/dd HH:mm:ss}");
             }
         }
 
@@ -263,8 +265,7 @@ namespace Test1
 
                         vm.Reload();
                         SaveAndUpdateTime();
-                        OperationLogger.Log("匯入",$"{fi.FullName}" ,$"新增={successCount}, 更新={updateCount}, 刪除={deleteCount}, 重複={duplicateCount}, 略過={skipCount}"
-                            );
+                        OperationLogger.Log("匯入", $"{fi.FullName}", $"新增={successCount}, 更新={updateCount}, 刪除={deleteCount}, 重複={duplicateCount}, 略過={skipCount}");
 
                         string message = "匯入完成";
                         MessageBox.Show(message, "匯入結果", MessageBoxButton.OK,
@@ -311,7 +312,6 @@ namespace Test1
                             sheets.Delete(wsName);
                         var ws = sheets.Add(wsName);
 
-
                         ws.Cells[1, 1].Value = "Time";
                         ws.Cells[1, 2].Value = "Panel_ID";
                         ws.Cells[1, 3].Value = "LOT_ID";
@@ -333,7 +333,6 @@ namespace Test1
                     SaveAndUpdateTime();
                     OperationLogger.Log("匯出", $"{sfd.FileName}",
                         $"匯出筆數={vm.Logs.Count}");
-
                 }
                 catch (Exception ex)
                 {
@@ -341,8 +340,6 @@ namespace Test1
                 }
             }
         }
-
-        
     }
 
     public class PanelLog : INotifyPropertyChanged
@@ -461,8 +458,6 @@ namespace Test1
                 new { Time = time, Panel_ID = panelId, LOT_ID = lotId, Carrier_ID = carrierId });
         }
 
-
-
         public void UpdatePanelLog(PanelLog log)
         {
             using var conn = new NpgsqlConnection(DbConnStr);
@@ -485,6 +480,14 @@ namespace Test1
             var raw = conn.Query<PanelLog>("SELECT id, time AS Time, panel_id AS Panel_ID, lot_id AS LOT_ID, carrier_id AS Carrier_ID FROM panel_logs");
             var sorted = raw.OrderBy(x => x.Panel_ID).ThenBy(x => x.LOT_ID).ThenBy(x => x.Carrier_ID).ToList();
             return new ObservableCollection<PanelLog>(sorted);
+        }
+
+        public DateTime? GetLastUpdateTimeFromDb()
+        {
+            using var conn = new NpgsqlConnection(DbConnStr);
+            conn.Open();
+
+            return conn.ExecuteScalar<DateTime?>("SELECT MAX(time) FROM panel_logs");
         }
     }
 
@@ -522,7 +525,7 @@ namespace Test1
         {
             DataUpdated?.Invoke(this, EventArgs.Empty);
         }
-        
+
         private string newPanelId = "";
         public string NewPanelID { get => newPanelId; set { newPanelId = value; OnPropertyChanged(nameof(NewPanelID)); } }
         private string newLotId = "";
@@ -544,7 +547,7 @@ namespace Test1
                 {
                     Logs = new ObservableCollection<PanelLog>();
                     repo = null;
-                }                
+                }
             }
 
             AddLogCommand = new RelayCommand(_ =>
@@ -583,7 +586,6 @@ namespace Test1
                     {
                         try
                         {
-
                             var panelIds = items.Cast<PanelLog>().Select(x => x.Panel_ID).ToList();
 
                             var details = string.Join(Environment.NewLine,
@@ -596,12 +598,7 @@ namespace Test1
                                 repo.RemovePanelLog(item.Id);
                             }
                             Reload();
-
-                            OperationLogger.Log(
-                                "批次刪除",
-                                $"PanelID={string.Join(", ", panelIds)}",
-                                details);
-
+                            OperationLogger.Log("批次刪除", $"PanelID={string.Join(", ", panelIds)}", details);
                             DataUpdated?.Invoke(this, EventArgs.Empty);
                             MessageBox.Show("刪除成功", "訊息", MessageBoxButton.OK, MessageBoxImage.Information);
                         }
@@ -613,9 +610,6 @@ namespace Test1
                 }
             });
 
-
-
-
             DeleteLogCommand = new RelayCommand(param =>
             {
                 if (_userRole != "Admin") { MessageBox.Show("您沒有權限執行此操作。", "權限不足", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
@@ -624,7 +618,6 @@ namespace Test1
                     MessageBox.Show("資料庫未連接，無法刪除資料。", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
-
                 if (param is PanelLog log)
                 {
                     var pwdWindow = new AdminPasswordWindow { Owner = Application.Current.MainWindow };
@@ -634,7 +627,6 @@ namespace Test1
                     {
                         try
                         {
-
                             var originalTime = log.Time.ToString("yyyy/MM/dd HH:mm:ss");
                             var panelId = log.Panel_ID;
                             var lotId = log.LOT_ID;
@@ -645,7 +637,6 @@ namespace Test1
                             Reload();
                             OperationLogger.Log("刪除", $"PanelID={panelId}", detail);
                             DataUpdated?.Invoke(this, EventArgs.Empty);
-
                             MessageBox.Show("刪除成功");
                         }
                         catch (Exception ex)
@@ -655,7 +646,6 @@ namespace Test1
                     }
                 }
             });
-
 
             UpdateLogCommand = new RelayCommand(param =>
             {
@@ -693,8 +683,6 @@ namespace Test1
             });
         }
 
-
-       
         public void AddPanelLogFromOther(PanelLog item)
         {
             if (_userRole != "Admin") { MessageBox.Show("您沒有權限執行此操作。", "權限不足", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
@@ -721,6 +709,7 @@ namespace Test1
             {
                 MessageBox.Show($"重新載入資料失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+            (Application.Current.MainWindow as MainWindow)?.UpdateTimeFromDb();
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -747,5 +736,7 @@ namespace Test1
         }
     }
 }
+
+
 
 
