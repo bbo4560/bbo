@@ -41,17 +41,65 @@ namespace Test1
             {
                 using var conn = new NpgsqlConnection(DbConnStr);
                 conn.Open();
-                string sql = @"CREATE TABLE IF NOT EXISTS operation_logs (
-                               id SERIAL PRIMARY KEY,
-                               timestamp TIMESTAMP NOT NULL,
-                               operation_type VARCHAR(100) NOT NULL,
-                               target TEXT NOT NULL,
-                               detail TEXT
-                            );";
-                conn.Execute(sql);
+
+                var tableExists = conn.ExecuteScalar<int>(
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'operation_logs'") > 0;
+
+                if (!tableExists)
+                {
+                    string sql = @"CREATE TABLE operation_logs (
+                                   id SERIAL PRIMARY KEY,
+                                   timestamp TIMESTAMP NOT NULL,
+                                   operation_type VARCHAR(100) NOT NULL,
+                                   target TEXT NOT NULL,
+                                   detail TEXT
+                                );";
+                    conn.Execute(sql);
+                }
+                else
+                {
+                    var hasTimestamp = conn.ExecuteScalar<int>(
+                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'timestamp'") > 0;
+
+                    if (!hasTimestamp)
+                    {
+                        conn.Execute("ALTER TABLE operation_logs ADD COLUMN timestamp TIMESTAMP");
+                        conn.Execute("UPDATE operation_logs SET timestamp = NOW() WHERE timestamp IS NULL");
+                        conn.Execute("ALTER TABLE operation_logs ALTER COLUMN timestamp SET NOT NULL");
+                    }
+
+                    var hasOperationType = conn.ExecuteScalar<int>(
+                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'operation_type'") > 0;
+
+                    if (!hasOperationType)
+                    {
+                        conn.Execute("ALTER TABLE operation_logs ADD COLUMN operation_type VARCHAR(100)");
+                        conn.Execute("UPDATE operation_logs SET operation_type = '' WHERE operation_type IS NULL");
+                        conn.Execute("ALTER TABLE operation_logs ALTER COLUMN operation_type SET NOT NULL");
+                    }
+
+                    var hasTarget = conn.ExecuteScalar<int>(
+                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'target'") > 0;
+
+                    if (!hasTarget)
+                    {
+                        conn.Execute("ALTER TABLE operation_logs ADD COLUMN target TEXT");
+                        conn.Execute("UPDATE operation_logs SET target = '' WHERE target IS NULL");
+                        conn.Execute("ALTER TABLE operation_logs ALTER COLUMN target SET NOT NULL");
+                    }
+
+                    var hasDetail = conn.ExecuteScalar<int>(
+                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'detail'") > 0;
+
+                    if (!hasDetail)
+                    {
+                        conn.Execute("ALTER TABLE operation_logs ADD COLUMN detail TEXT");
+                    }
+                }
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"確保操作紀錄表存在失敗: {ex.Message}");
             }
         }
 
@@ -80,24 +128,30 @@ namespace Test1
                 Detail = detail
             };
 
+            // 補值確保 timestamp 一定合法
+            if (entry.Timestamp == default(DateTime) || entry.Timestamp == DateTime.MinValue)
+            {
+                entry.Timestamp = DateTime.Now;
+            }
+
             bool dbSuccess = false;
-            
-            
+
             try
             {
                 EnsureOperationLogsTableExists();
                 using var conn = new NpgsqlConnection(DbConnStr);
                 conn.Open();
+
                 conn.Execute(
                     "INSERT INTO operation_logs (timestamp, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
-                    new { entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
+                    new { Timestamp = entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
                 dbSuccess = true;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"資料庫寫入操作紀錄失敗: {ex.Message}");
             }
-            
+
             if (!dbSuccess)
             {
                 var line = JsonSerializer.Serialize(entry, SerializerOptions);
@@ -123,13 +177,13 @@ namespace Test1
             var entries = new List<OperationLogEntry>();
             var dbEntries = new List<OperationLogEntry>();
             var fileEntries = new List<OperationLogEntry>();
-            
+
             try
             {
                 EnsureOperationLogsTableExists();
                 using var conn = new NpgsqlConnection(DbConnStr);
                 conn.Open();
-                
+
                 var sql = @"SELECT 
                     id AS Id,
                     timestamp AS Timestamp,
@@ -138,9 +192,9 @@ namespace Test1
                     detail AS Detail
                     FROM operation_logs 
                     ORDER BY timestamp ASC";
-                
+
                 dbEntries = conn.Query<OperationLogEntry>(sql).ToList();
-                
+
                 System.Diagnostics.Debug.WriteLine($"從資料庫讀取到 {dbEntries.Count} 筆操作紀錄");
             }
             catch (Exception ex)
@@ -148,7 +202,7 @@ namespace Test1
                 System.Diagnostics.Debug.WriteLine($"資料庫讀取操作紀錄失敗: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"堆疊追蹤: {ex.StackTrace}");
             }
-            
+
             try
             {
                 lock (SyncRoot)
@@ -164,6 +218,8 @@ namespace Test1
                                 var entry = JsonSerializer.Deserialize<OperationLogEntry>(line, SerializerOptions);
                                 if (entry != null)
                                 {
+                                    if (entry.Timestamp == default(DateTime) || entry.Timestamp == DateTime.MinValue)
+                                        entry.Timestamp = DateTime.Now;
                                     fileEntries.Add(entry);
                                 }
                             }
@@ -177,9 +233,9 @@ namespace Test1
             catch
             {
             }
-            
+
             var allEntries = new Dictionary<string, OperationLogEntry>();
-            
+
             foreach (var entry in dbEntries)
             {
                 var key = $"{entry.Timestamp:yyyyMMddHHmmss}_{entry.OperationType}_{entry.Target}";
@@ -188,7 +244,7 @@ namespace Test1
                     allEntries[key] = entry;
                 }
             }
-            
+
             var entriesToMigrate = new List<OperationLogEntry>();
             foreach (var entry in fileEntries)
             {
@@ -199,7 +255,7 @@ namespace Test1
                     entriesToMigrate.Add(entry);
                 }
             }
-            
+
             if (entriesToMigrate.Count > 0)
             {
                 try
@@ -207,17 +263,22 @@ namespace Test1
                     EnsureOperationLogsTableExists();
                     using var conn = new NpgsqlConnection(DbConnStr);
                     conn.Open();
+
                     foreach (var entry in entriesToMigrate)
                     {
                         try
                         {
+                            if (entry.Timestamp == default(DateTime) || entry.Timestamp == DateTime.MinValue)
+                                entry.Timestamp = DateTime.Now;
+
                             conn.Execute(
                                 "INSERT INTO operation_logs (timestamp, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
-                                new { entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
+                                new { Timestamp = entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
                         }
                         catch (Exception ex)
                         {
                             System.Diagnostics.Debug.WriteLine($"遷移操作紀錄失敗: {ex.Message}");
+                            System.Diagnostics.Debug.WriteLine($"操作類型: {entry.OperationType}, 目標: {entry.Target}, 時間: {entry.Timestamp}");
                         }
                     }
                     System.Diagnostics.Debug.WriteLine($"成功遷移 {entriesToMigrate.Count} 筆本地檔案紀錄到資料庫");
@@ -227,14 +288,14 @@ namespace Test1
                     System.Diagnostics.Debug.WriteLine($"批量遷移操作紀錄失敗: {ex.Message}");
                 }
             }
-            
+
             entries = allEntries.Values.OrderBy(e => e.Timestamp).ToList();
-            
+
             System.Diagnostics.Debug.WriteLine($"合併後總共 {entries.Count} 筆操作紀錄（資料庫: {dbEntries.Count}, 本地檔案: {fileEntries.Count}）");
-            
+
             return entries;
         }
-        
+
         public static int GetDatabaseRecordCount()
         {
             try
@@ -258,7 +319,7 @@ namespace Test1
                 {
                     if (!File.Exists(InternalLogFilePath))
                         return;
-                    
+
                     var fileEntries = new List<OperationLogEntry>();
                     foreach (var line in File.ReadLines(InternalLogFilePath, Encoding.UTF8))
                     {
@@ -269,6 +330,8 @@ namespace Test1
                             var entry = JsonSerializer.Deserialize<OperationLogEntry>(line, SerializerOptions);
                             if (entry != null)
                             {
+                                if (entry.Timestamp == default(DateTime) || entry.Timestamp == DateTime.MinValue)
+                                    entry.Timestamp = DateTime.Now;
                                 fileEntries.Add(entry);
                             }
                         }
@@ -276,36 +339,41 @@ namespace Test1
                         {
                         }
                     }
-                    
+
                     if (fileEntries.Count == 0)
                         return;
-                    
+
                     EnsureOperationLogsTableExists();
                     using var conn = new NpgsqlConnection(DbConnStr);
                     conn.Open();
-                    
+
                     int successCount = 0;
                     foreach (var entry in fileEntries)
                     {
                         try
                         {
+                            if (entry.Timestamp == default(DateTime) || entry.Timestamp == DateTime.MinValue)
+                                entry.Timestamp = DateTime.Now;
+
                             var existing = conn.QueryFirstOrDefault<int?>(
                                 "SELECT id FROM operation_logs WHERE timestamp = @Timestamp AND operation_type = @OperationType AND target = @Target",
-                                new { entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target });
-                            
+                                new { Timestamp = entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target });
+
                             if (existing == null)
                             {
                                 conn.Execute(
                                     "INSERT INTO operation_logs (timestamp, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
-                                    new { entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
+                                    new { Timestamp = entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
                                 successCount++;
                             }
                         }
-                        catch
+                        catch (Exception ex)
                         {
+                            System.Diagnostics.Debug.WriteLine($"遷移單筆操作紀錄失敗: {ex.Message}");
+                            System.Diagnostics.Debug.WriteLine($"操作類型: {entry.OperationType}, 目標: {entry.Target}, 時間: {entry.Timestamp}");
                         }
                     }
-                    
+
                     if (successCount > 0)
                     {
                         File.Delete(InternalLogFilePath);
@@ -346,3 +414,4 @@ namespace Test1
         }
     }
 }
+
