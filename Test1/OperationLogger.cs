@@ -34,7 +34,7 @@ namespace Test1
             WriteIndented = false
         };
 
-        private static readonly string DbConnStr = "Host=192.168.43.93;Username=postgres;Password=1234;Database=panellogdb";
+        private static readonly string DbConnStr = "Host=172.20.10.2;Username=postgres;Password=1234;Database=panellogdb";
 
         private static void EnsureOperationLogsTableExists()
         {

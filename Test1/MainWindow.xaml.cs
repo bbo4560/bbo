@@ -27,7 +27,7 @@ namespace Test1
                 lastUpdateTime = appConfig.LastUpdateTime.Value;
             }
 
-            var tempVm = new PanelLogViewModel(createEmpty: true);
+            var tempVm = new PanelLogViewModel(appConfig, createEmpty: true);
             try
             {
                 InitializeComponent();
@@ -49,7 +49,7 @@ namespace Test1
             {
                 try
                 {
-                    var vm = new PanelLogViewModel();
+                    var vm = new PanelLogViewModel(appConfig);
                     bool dbConnected = vm.Repo != null;
                     Dispatcher.Invoke(() =>
                     {
@@ -82,14 +82,9 @@ namespace Test1
                 Dispatcher.Invoke(UpdateTimeFromDb);
                 return;
             }
-            if (DataContext is PanelLogViewModel vm && vm.Repo != null)
-            {
-                var dbTime = vm.Repo.GetLastUpdateTimeFromDb();
-                if (dbTime.HasValue)
-                    txtUpdateTime.Text = "最後更新時間: " + dbTime.Value.ToString("yyyy/MM/dd HH:mm:ss");
-                else
-                    txtUpdateTime.Text = "尚未有資料更新";
-            }
+            txtUpdateTime.Text = appConfig.LastUpdateTime.HasValue
+                ? "最後更新時間: " + appConfig.LastUpdateTime.Value.ToString("yyyy/MM/dd HH:mm:ss")
+                : "尚未有資料更新";
         }
 
         private void SaveAndUpdateTime()
@@ -104,19 +99,9 @@ namespace Test1
             bool isAdmin = userRole == "Admin";
             bool isUser = userRole == "User";
 
-            if (isUser)
-            {
-                btnAdd.IsEnabled = false;
-                btnImport.IsEnabled = false;
-                LogsDataGrid.IsReadOnly = true;
-            }
-            else if (isAdmin)
-            {
-                btnAdd.IsEnabled = true;
-                btnImport.IsEnabled = true;
-                LogsDataGrid.IsReadOnly = false;
-            }
-
+            btnAdd.IsEnabled = isAdmin;
+            btnImport.IsEnabled = isAdmin;
+            LogsDataGrid.IsReadOnly = isUser;
             if (DataContext is PanelLogViewModel vm)
             {
                 vm.UserRole = userRole;
@@ -155,25 +140,9 @@ namespace Test1
                     var vm = DataContext as PanelLogViewModel;
                     vm?.AddPanelLogFromOther(newItem);
                     vm?.Reload();
-                    SaveAndUpdateTime();
+                    appConfig.UpdateLastUpdateTime(DateTime.Now);  // 每次新增都更新
+                    UpdateTimeFromDb();
                 }
-            }
-        }
-
-        private void SwitchUser_Click(object sender, RoutedEventArgs e)
-        {
-            var login = new LoginWindow();
-            if (login.ShowDialog() == true)
-            {
-                var oldRole = userRole;
-                userRole = login.UserRole;
-                ApplyUserPermissions();
-                if (DataContext is PanelLogViewModel vm)
-                {
-                    vm.UserRole = userRole;
-                }
-                MessageBox.Show($"已切換使用者，角色：{userRole}", "切換成功", MessageBoxButton.OK, MessageBoxImage.Information);
-                OperationLogger.Log("切換使用者", $"使用者:{oldRole}->{userRole}", $"切換時間={DateTime.Now:yyyy/MM/dd HH:mm:ss}");
             }
         }
 
@@ -263,7 +232,8 @@ namespace Test1
                         }
 
                         vm.Reload();
-                        SaveAndUpdateTime();
+                        appConfig.UpdateLastUpdateTime(DateTime.Now); // 匯入/新增後更新
+                        UpdateTimeFromDb();
                         OperationLogger.Log("匯入", $"{fi.FullName}", $"新增={successCount}, 更新={updateCount}, 刪除={deleteCount}, 重複={duplicateCount}, 略過={skipCount}");
 
                         string message = "匯入完成";
@@ -286,57 +256,67 @@ namespace Test1
                 FileName = "PanelLogs.xlsx",
                 Title = "儲存 Excel 檔案"
             };
-            if (sfd.ShowDialog() == true)
+            if (sfd.ShowDialog() != true)
+                return;
+
+            var vm = DataContext as PanelLogViewModel;
+            if (vm == null)
             {
-                try
+                MessageBox.Show("資料模型初始化失敗。", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            vm.Reload(); // 保證匯出前資料是最新
+
+            if (vm.Logs == null || vm.Logs.Count == 0)
+            {
+                MessageBox.Show("沒有資料可匯出！", "提醒", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                var fi = new FileInfo(sfd.FileName);
+                using (var package = new ExcelPackage(fi))
                 {
-                    var vm = DataContext as PanelLogViewModel;
-                    if (vm?.Logs == null)
-                    {
-                        MessageBox.Show("無法取得資料。", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
-                        return;
-                    }
-                    if (vm.Logs.Count == 0)
-                    {
-                        MessageBox.Show("沒有資料可匯出！", "提醒", MessageBoxButton.OK, MessageBoxImage.Information);
-                        return;
-                    }
+                    var wsName = "PanelLogs";
+                    var sheets = package.Workbook.Worksheets;
+                    if (sheets[wsName] != null)
+                        sheets.Delete(wsName);
+                    var ws = sheets.Add(wsName);
 
-                    var fi = new FileInfo(sfd.FileName);
-                    using (var package = new ExcelPackage(fi))
+                    ws.Cells[1, 1].Value = "Time";
+                    ws.Cells[1, 2].Value = "Panel_ID";
+                    ws.Cells[1, 3].Value = "LOT_ID";
+                    ws.Cells[1, 4].Value = "Carrier_ID";
+
+                    for (int i = 0; i < vm.Logs.Count; i++)
                     {
-                        var wsName = "PanelLogs";
-                        var sheets = package.Workbook.Worksheets;
-                        if (sheets[wsName] != null)
-                            sheets.Delete(wsName);
-                        var ws = sheets.Add(wsName);
-
-                        ws.Cells[1, 1].Value = "Time";
-                        ws.Cells[1, 2].Value = "Panel_ID";
-                        ws.Cells[1, 3].Value = "LOT_ID";
-                        ws.Cells[1, 4].Value = "Carrier_ID";
-
-                        for (int i = 0; i < vm.Logs.Count; i++)
-                        {
-                            ws.Cells[i + 2, 1].Value = vm.Logs[i].Time;
-                            ws.Cells[i + 2, 1].Style.Numberformat.Format = "yyyy/MM/dd HH:mm:ss";
-                            ws.Cells[i + 2, 2].Value = vm.Logs[i].Panel_ID;
-                            ws.Cells[i + 2, 3].Value = vm.Logs[i].LOT_ID;
-                            ws.Cells[i + 2, 4].Value = vm.Logs[i].Carrier_ID;
-                        }
-                        ws.Cells.AutoFitColumns();
-                        package.Save();
+                        ws.Cells[i + 2, 1].Value = vm.Logs[i].Time;
+                        ws.Cells[i + 2, 1].Style.Numberformat.Format = "yyyy/MM/dd HH:mm:ss";
+                        ws.Cells[i + 2, 2].Value = vm.Logs[i].Panel_ID;
+                        ws.Cells[i + 2, 3].Value = vm.Logs[i].LOT_ID;
+                        ws.Cells[i + 2, 4].Value = vm.Logs[i].Carrier_ID;
                     }
 
-                    MessageBox.Show($"匯出成功");
-                    SaveAndUpdateTime();
-                    OperationLogger.Log("匯出", $"{sfd.FileName}",
-                        $"匯出筆數={vm.Logs.Count}");
+                    // 匯出最後更新時間（採用 appConfig 設定）
+                    if (appConfig.LastUpdateTime.HasValue)
+                    {
+                        ws.Cells[vm.Logs.Count + 3, 1].Value = "最後更新時間:";
+                        ws.Cells[vm.Logs.Count + 3, 2].Value = appConfig.LastUpdateTime.Value.ToString("yyyy/MM/dd HH:mm:ss");
+                    }
+
+                    ws.Cells.AutoFitColumns();
+                    package.Save();
                 }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"匯出失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
+
+                MessageBox.Show("匯出成功");
+                OperationLogger.Log("匯出", $"{sfd.FileName}",
+                    $"匯出筆數={vm.Logs.Count}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"匯出失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
     }
@@ -379,9 +359,9 @@ namespace Test1
 
     public class PanelLogRepository
     {
-        private readonly string serverConnStr = "Host=192.168.43.93;Username=postgres;Password=1234;Database=postgres";
+        private readonly string serverConnStr = "Host=172.20.10.2;Username=postgres;Password=1234;Database=postgres";
         private readonly string dbName = "panellogdb";
-        private string DbConnStr => $"Host=192.168.43.93;Username=postgres;Password=1234;Database={dbName}";
+        private string DbConnStr => $"Host=172.20.10.2;Username=postgres;Password=1234;Database={dbName}";
 
         public PanelLogRepository()
         {
@@ -479,7 +459,6 @@ namespace Test1
         {
             using var conn = new NpgsqlConnection(DbConnStr);
             conn.Open();
-
             return conn.ExecuteScalar<DateTime?>("SELECT MAX(time) FROM panel_logs");
         }
     }
@@ -489,6 +468,7 @@ namespace Test1
         private PanelLogRepository? repo;
         public PanelLogRepository? Repo => repo;
 
+        private AppConfig appConfig;
         public ObservableCollection<PanelLog> Logs { get; private set; }
         private PanelLog? _selectedLog;
         public PanelLog? SelectedLog
@@ -526,9 +506,11 @@ namespace Test1
         private string newCarrierId = "";
         public string NewCarrierID { get => newCarrierId; set { newCarrierId = value; OnPropertyChanged(nameof(NewCarrierID)); } }
 
-        public PanelLogViewModel(bool createEmpty = false)
+        public PanelLogViewModel(AppConfig config = null, bool createEmpty = false)
         {
             Logs = new ObservableCollection<PanelLog>();
+            appConfig = config ?? new AppConfig();
+
             if (!createEmpty)
             {
                 try
@@ -554,9 +536,11 @@ namespace Test1
                         var now = DateTime.Now;
                         repo.AddPanelLog(now, pid, lid, cid);
                         Reload();
+                        appConfig.UpdateLastUpdateTime(DateTime.Now);
                         OperationLogger.Log("新增", $"PanelID={pid}",
                             $"Time={now:yyyy/MM/dd HH:mm:ss}, PanelID={pid},LotID={lid},CarrierID={cid}");
                         NewPanelID = ""; NewLotID = ""; NewCarrierID = "";
+                        NotifyDataUpdated();
                     }
                     catch (Exception ex) { MessageBox.Show($"新增資料失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error); }
                 }
@@ -591,8 +575,9 @@ namespace Test1
                                 repo.RemovePanelLog(item.Id);
                             }
                             Reload();
+                            appConfig.UpdateLastUpdateTime(DateTime.Now);
                             OperationLogger.Log("批次刪除", $"PanelID={string.Join(", ", panelIds)}", details);
-                            DataUpdated?.Invoke(this, EventArgs.Empty);
+                            NotifyDataUpdated();
                             MessageBox.Show("刪除成功", "訊息", MessageBoxButton.OK, MessageBoxImage.Information);
                         }
                         catch (Exception ex)
@@ -628,8 +613,9 @@ namespace Test1
 
                             repo.RemovePanelLog(log.Id);
                             Reload();
+                            appConfig.UpdateLastUpdateTime(DateTime.Now);
                             OperationLogger.Log("刪除", $"PanelID={panelId}", detail);
-                            DataUpdated?.Invoke(this, EventArgs.Empty);
+                            NotifyDataUpdated();
                             MessageBox.Show("刪除成功");
                         }
                         catch (Exception ex)
@@ -665,9 +651,10 @@ namespace Test1
                             {
                                 repo.UpdatePanelLog(edited);
                                 Reload();
+                                appConfig.UpdateLastUpdateTime(DateTime.Now);
                                 var detail = OperationLogger.DescribeChanges(originalSnapshot, edited);
                                 OperationLogger.Log("修改", $"PanelID={edited.Panel_ID}", detail);
-                                DataUpdated?.Invoke(this, EventArgs.Empty);
+                                NotifyDataUpdated();
                             }
                             catch (Exception ex) { MessageBox.Show($"修改資料失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error); }
                         }
@@ -684,8 +671,10 @@ namespace Test1
             {
                 repo.AddPanelLog(item.Time, item.Panel_ID, item.LOT_ID, item.Carrier_ID);
                 Reload();
+                appConfig.UpdateLastUpdateTime(DateTime.Now);
                 OperationLogger.Log("新增", $"PanelID={item.Panel_ID}",
                             $"Time={item.Time:yyyy/MM/dd HH:mm:ss} \nPanelID={item.Panel_ID} \nLotID={item.LOT_ID} \nCarrierID={item.Carrier_ID}");
+                NotifyDataUpdated();
             }
             catch (Exception ex) { MessageBox.Show($"新增資料失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error); }
         }

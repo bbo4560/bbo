@@ -24,9 +24,7 @@ namespace Test1
                     return config ?? new AppConfig();
                 }
             }
-            catch
-            {
-            }
+            catch { }
             return new AppConfig();
         }
 
@@ -39,13 +37,10 @@ namespace Test1
                 {
                     Directory.CreateDirectory(directory);
                 }
-
                 var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(ConfigFilePath, json);
             }
-            catch
-            {
-            }
+            catch { }
         }
 
         public void UpdateLastUpdateTime(DateTime time)

@@ -23,7 +23,7 @@
            Foreground="#888"
            Grid.Row="0"/>
 
-        <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="0,4,0,4">
+        <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="0,4,0,4" Cursor="">
             <Button x:Name="btnAdd" FontSize="18" Height="38" Width="90"
                     Content="新增" Click="OpenAddWindow" Margin="0,0,8,0"
                     Style="{StaticResource MaterialDesignRaisedButton}"/>
@@ -32,18 +32,14 @@
                     Style="{StaticResource MaterialDesignRaisedButton}" Cursor="Hand"/>
             <Button x:Name="btnImport" FontSize="18" Height="38" Width="90"
                     Content="匯入" Click="ImportExcel_Click" Margin="0,0,8,0"
-                    Style="{StaticResource MaterialDesignRaisedButton}"/>
+                    Style="{StaticResource MaterialDesignRaisedButton}" Cursor="Hand"/>
             <Button x:Name="btnExport" FontSize="18" Height="38" Width="90"
                     Content="匯出" Click="ExportExcel_Click" Margin="0,0,8,0"
                     Style="{StaticResource MaterialDesignRaisedButton}" Cursor="Hand"/>
-            
+
             <Button FontSize="18" Height="38" Width="140"
                     Content="查看操作紀錄" Click="ShowOperationLogWindow" Margin="0,0,8,0"
                     Style="{StaticResource MaterialDesignRaisedButton}" Cursor="Hand"/>
-            <Button x:Name="btnSwitchUser" FontSize="17" Height="38" Width="120"
-                    Content="切換使用者" Click="SwitchUser_Click" Margin="0,0,6,0"
-                    Style="{StaticResource MaterialDesignRaisedButton}" Cursor="Hand"/>
-
         </StackPanel>
 
         <DataGrid x:Name="LogsDataGrid"
