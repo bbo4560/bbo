@@ -344,41 +344,35 @@ namespace Test1
     public class PanelLog : INotifyPropertyChanged
     {
         public int Id { get; set; }
-
         private DateTime time = DateTime.Now;
         public DateTime Time
         {
             get => time;
             set { time = value; NotifyChanged(nameof(Time)); NotifyChanged(nameof(TimeFormatted)); }
         }
-
         public string TimeFormatted
         {
             get => time.ToString("yyyy/MM/dd HH:mm:ss");
             set { if (DateTime.TryParse(value, out var dt)) Time = dt; }
         }
-
         private int panelId;
         public int Panel_ID
         {
             get => panelId;
             set { panelId = value; NotifyChanged(nameof(Panel_ID)); }
         }
-
         private int lotId;
         public int LOT_ID
         {
             get => lotId;
             set { lotId = value; NotifyChanged(nameof(LOT_ID)); }
         }
-
         private int carrierId;
         public int Carrier_ID
         {
             get => carrierId;
             set { carrierId = value; NotifyChanged(nameof(Carrier_ID)); }
         }
-
         public event PropertyChangedEventHandler? PropertyChanged;
         private void NotifyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
@@ -735,7 +729,3 @@ namespace Test1
         }
     }
 }
-
-
-
-

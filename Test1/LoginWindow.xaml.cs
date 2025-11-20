@@ -9,36 +9,51 @@ namespace Test1
         public LoginWindow()
         {
             InitializeComponent();
-            Loaded += (_, _) => UsernameTextBox.Focus();
+            UsernameTextBox.Text = Environment.MachineName;   
+            UsernameTextBox.IsReadOnly = true;                
+            Loaded += (_, _) => PasswordBox.Focus();
         }
 
         private void LoginButton_Click(object sender, RoutedEventArgs e)
         {
-            string username = UsernameTextBox.Text.Trim();
+            string inputUsername = UsernameTextBox.Text.Trim();          
             string password = PasswordBox.Password;
+            string machineName = Environment.MachineName;
 
-            if (string.IsNullOrWhiteSpace(username))
+            
+            if (inputUsername != machineName)
             {
-                MessageBox.Show("請輸入帳號和密碼", "錯誤", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"帳號必須為本機名稱 ({machineName})，請確認輸入。", "帳號錯誤", MessageBoxButton.OK, MessageBoxImage.Warning);
+                UsernameTextBox.Text = machineName;
+                UsernameTextBox.Focus();
                 return;
             }
 
-            if (AuthConfig.Users.ContainsKey(username) && AuthConfig.Users[username].Password == password)
+            
+            if (machineName == "MSI") 
             {
-                UserRole = AuthConfig.Users[username].Role;
-                DialogResult = true;
-                Close();
+                if (password != AuthConfig.AdminPassword)
+                {
+                    MessageBox.Show("密碼錯誤", "錯誤", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    PasswordBox.Clear();
+                    PasswordBox.Focus();
+                    return;
+                }
             }
-            else
+            else if (machineName == "SAAIBUCIM003")
             {
-                MessageBox.Show("帳號或密碼錯誤", "錯誤", MessageBoxButton.OK, MessageBoxImage.Warning);
-                PasswordBox.Clear();
-                PasswordBox.Focus();
+                if (password != AuthConfig.AdminPassword)
+                {
+                    MessageBox.Show("密碼錯誤", "錯誤", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    PasswordBox.Clear();
+                    PasswordBox.Focus();
+                    return;
+                }
             }
+
+            UserRole = AuthConfig.GetRole(machineName);
+            DialogResult = true;
+            Close();
         }
     }
 }
-
-
-
-
