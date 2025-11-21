@@ -18,7 +18,6 @@ namespace Test1
             public string OperationType { get; set; } = string.Empty;
             public string Target { get; set; } = string.Empty;
             public string? Detail { get; set; }
-            public string HostName { get; set; } = string.Empty;
         }
 
         private static readonly object SyncRoot = new object();
@@ -34,7 +33,7 @@ namespace Test1
             WriteIndented = false
         };
 
-        private static readonly string DbConnStr = "Host=localhost;Username=postgres;Password=1234;Database=panellogdb";
+        private static readonly string DbConnStr = "Host=192.168.43.93;Username=postgres;Password=1234;Database=panellogdb";
 
         private static void EnsureOperationLogsTableExists()
         {
@@ -42,10 +41,10 @@ namespace Test1
             {
                 using var conn = new NpgsqlConnection(DbConnStr);
                 conn.Open();
-
+                
                 var tableExists = conn.ExecuteScalar<int>(
                     "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'operation_logs'") > 0;
-
+                
                 if (!tableExists)
                 {
                     string sql = @"CREATE TABLE operation_logs (
@@ -53,18 +52,72 @@ namespace Test1
                                    timestamp TIMESTAMP NOT NULL,
                                    operation_type VARCHAR(100) NOT NULL,
                                    target TEXT NOT NULL,
-                                   detail TEXT,
-                                   host_name VARCHAR(100)
+                                   detail TEXT
                                 );";
                     conn.Execute(sql);
                 }
                 else
                 {
-                    var hasHostName = conn.ExecuteScalar<int>(
-                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'host_name'") > 0;
-                    if (!hasHostName)
+                    var hasTimestamp = conn.ExecuteScalar<int>(
+                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'timestamp'") > 0;
+                    
+                    var hasActionTime = conn.ExecuteScalar<int>(
+                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'action_time'") > 0;
+                    
+                    if (!hasTimestamp && hasActionTime)
                     {
-                        conn.Execute("ALTER TABLE operation_logs ADD COLUMN host_name VARCHAR(100)");
+                        try
+                        {
+                            conn.Execute("ALTER TABLE operation_logs RENAME COLUMN action_time TO timestamp");
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"重命名 action_time 到 timestamp 失敗: {ex.Message}");
+                        }
+                    }
+                    else if (!hasTimestamp)
+                    {
+                        var hasTime = conn.ExecuteScalar<int>(
+                            "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'time'") > 0;
+                        
+                        if (hasTime)
+                        {
+                            conn.Execute("ALTER TABLE operation_logs RENAME COLUMN time TO timestamp");
+                        }
+                        else
+                        {
+                            conn.Execute("ALTER TABLE operation_logs ADD COLUMN timestamp TIMESTAMP");
+                            conn.Execute("UPDATE operation_logs SET timestamp = NOW() WHERE timestamp IS NULL");
+                            conn.Execute("ALTER TABLE operation_logs ALTER COLUMN timestamp SET NOT NULL");
+                        }
+                    }
+                    
+                    var hasOperationType = conn.ExecuteScalar<int>(
+                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'operation_type'") > 0;
+                    
+                    if (!hasOperationType)
+                    {
+                        conn.Execute("ALTER TABLE operation_logs ADD COLUMN operation_type VARCHAR(100)");
+                        conn.Execute("UPDATE operation_logs SET operation_type = '' WHERE operation_type IS NULL");
+                        conn.Execute("ALTER TABLE operation_logs ALTER COLUMN operation_type SET NOT NULL");
+                    }
+                    
+                    var hasTarget = conn.ExecuteScalar<int>(
+                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'target'") > 0;
+                    
+                    if (!hasTarget)
+                    {
+                        conn.Execute("ALTER TABLE operation_logs ADD COLUMN target TEXT");
+                        conn.Execute("UPDATE operation_logs SET target = '' WHERE target IS NULL");
+                        conn.Execute("ALTER TABLE operation_logs ALTER COLUMN target SET NOT NULL");
+                    }
+                    
+                    var hasDetail = conn.ExecuteScalar<int>(
+                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'detail'") > 0;
+                    
+                    if (!hasDetail)
+                    {
+                        conn.Execute("ALTER TABLE operation_logs ADD COLUMN detail TEXT");
                     }
                 }
             }
@@ -74,6 +127,21 @@ namespace Test1
             }
         }
 
+        public static string DescribeChanges(PanelLog before, PanelLog after)
+        {
+            var changes = new List<string>();
+            if (before.Panel_ID != after.Panel_ID)
+                changes.Add($"PanelID: {before.Panel_ID} -> {after.Panel_ID}");
+            if (before.LOT_ID != after.LOT_ID)
+                changes.Add($"LOTID: {before.LOT_ID} -> {after.LOT_ID}");
+            if (before.Carrier_ID != after.Carrier_ID)
+                changes.Add($"CarrierID: {before.Carrier_ID} -> {after.Carrier_ID}");
+            if (before.Time != after.Time)
+                changes.Add($"Time: {before.Time:yyyy/MM/dd HH:mm:ss} -> {after.Time:yyyy/MM/dd HH:mm:ss}");
+
+            return changes.Count > 0 ? string.Join(", ", changes) : "未變更";
+        }
+
         public static void Log(string operationType, string target, string? detail = null, DateTime? timestamp = null)
         {
             var entry = new OperationLogEntry
@@ -81,34 +149,33 @@ namespace Test1
                 Timestamp = timestamp ?? DateTime.Now,
                 OperationType = operationType,
                 Target = target,
-                Detail = detail,
-                HostName = Environment.MachineName
+                Detail = detail
             };
 
-            if (entry.Timestamp == default(DateTime) || entry.Timestamp == DateTime.MinValue)
-            {
-                entry.Timestamp = DateTime.Now;
-            }
-
             bool dbSuccess = false;
-
+            
+            
             try
             {
                 EnsureOperationLogsTableExists();
                 using var conn = new NpgsqlConnection(DbConnStr);
                 conn.Open();
-
+                
+                var hasActionTime = conn.ExecuteScalar<int>(
+                    "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'action_time'") > 0;
+                
+                string timeColumnName = hasActionTime ? "action_time" : "timestamp";
+                
                 conn.Execute(
-                    "INSERT INTO operation_logs (timestamp, operation_type, target, detail, host_name) VALUES (@Timestamp, @OperationType, @Target, @Detail, @HostName)",
-                    new { Timestamp = entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail, HostName = entry.HostName });
-
+                    $"INSERT INTO operation_logs ({timeColumnName}, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
+                    new { entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
                 dbSuccess = true;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"資料庫寫入操作紀錄失敗: {ex.Message}");
             }
-
+            
             if (!dbSuccess)
             {
                 var line = JsonSerializer.Serialize(entry, SerializerOptions);
@@ -134,25 +201,29 @@ namespace Test1
             var entries = new List<OperationLogEntry>();
             var dbEntries = new List<OperationLogEntry>();
             var fileEntries = new List<OperationLogEntry>();
-
+            
             try
             {
                 EnsureOperationLogsTableExists();
                 using var conn = new NpgsqlConnection(DbConnStr);
                 conn.Open();
-
-                var sql = @"SELECT 
-                            id AS Id,
-                            timestamp AS Timestamp,
-                            operation_type AS OperationType,
-                            target AS Target,
-                            detail AS Detail,
-                            host_name AS HostName
-                            FROM operation_logs
-                            ORDER BY timestamp ASC";
-
+                
+                var hasActionTime = conn.ExecuteScalar<int>(
+                    "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'action_time'") > 0;
+                
+                string timeColumnName = hasActionTime ? "action_time" : "timestamp";
+                
+                var sql = $@"SELECT 
+                    id AS Id,
+                    {timeColumnName} AS Timestamp,
+                    operation_type AS OperationType,
+                    target AS Target,
+                    detail AS Detail
+                    FROM operation_logs 
+                    ORDER BY {timeColumnName} ASC";
+                
                 dbEntries = conn.Query<OperationLogEntry>(sql).ToList();
-
+                
                 System.Diagnostics.Debug.WriteLine($"從資料庫讀取到 {dbEntries.Count} 筆操作紀錄");
             }
             catch (Exception ex)
@@ -160,7 +231,7 @@ namespace Test1
                 System.Diagnostics.Debug.WriteLine($"資料庫讀取操作紀錄失敗: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"堆疊追蹤: {ex.StackTrace}");
             }
-
+            
             try
             {
                 lock (SyncRoot)
@@ -176,10 +247,6 @@ namespace Test1
                                 var entry = JsonSerializer.Deserialize<OperationLogEntry>(line, SerializerOptions);
                                 if (entry != null)
                                 {
-                                    if (entry.Timestamp == default(DateTime) || entry.Timestamp == DateTime.MinValue)
-                                        entry.Timestamp = DateTime.Now;
-                                    if (string.IsNullOrEmpty(entry.HostName))
-                                        entry.HostName = Environment.MachineName;
                                     fileEntries.Add(entry);
                                 }
                             }
@@ -193,9 +260,9 @@ namespace Test1
             catch
             {
             }
-
+            
             var allEntries = new Dictionary<string, OperationLogEntry>();
-
+            
             foreach (var entry in dbEntries)
             {
                 var key = $"{entry.Timestamp:yyyyMMddHHmmss}_{entry.OperationType}_{entry.Target}";
@@ -204,7 +271,7 @@ namespace Test1
                     allEntries[key] = entry;
                 }
             }
-
+            
             var entriesToMigrate = new List<OperationLogEntry>();
             foreach (var entry in fileEntries)
             {
@@ -215,7 +282,7 @@ namespace Test1
                     entriesToMigrate.Add(entry);
                 }
             }
-
+            
             if (entriesToMigrate.Count > 0)
             {
                 try
@@ -223,19 +290,25 @@ namespace Test1
                     EnsureOperationLogsTableExists();
                     using var conn = new NpgsqlConnection(DbConnStr);
                     conn.Open();
-
+                    
+                    var hasActionTime = conn.ExecuteScalar<int>(
+                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'action_time'") > 0;
+                    
+                    string timeColumnName = hasActionTime ? "action_time" : "timestamp";
+                    
                     foreach (var entry in entriesToMigrate)
                     {
                         try
                         {
-                            if (entry.Timestamp == default(DateTime) || entry.Timestamp == DateTime.MinValue)
-                                entry.Timestamp = DateTime.Now;
-                            if (string.IsNullOrEmpty(entry.HostName))
-                                entry.HostName = Environment.MachineName;
-
+                            var timestamp = entry.Timestamp;
+                            if (timestamp == DateTime.MinValue || timestamp == default(DateTime))
+                            {
+                                timestamp = DateTime.Now;
+                            }
+                            
                             conn.Execute(
-                                "INSERT INTO operation_logs (timestamp, operation_type, target, detail, host_name) VALUES (@Timestamp, @OperationType, @Target, @Detail, @HostName)",
-                                new { Timestamp = entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail, HostName = entry.HostName });
+                                $"INSERT INTO operation_logs ({timeColumnName}, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
+                                new { Timestamp = timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
                         }
                         catch (Exception ex)
                         {
@@ -250,14 +323,14 @@ namespace Test1
                     System.Diagnostics.Debug.WriteLine($"批量遷移操作紀錄失敗: {ex.Message}");
                 }
             }
-
+            
             entries = allEntries.Values.OrderBy(e => e.Timestamp).ToList();
-
+            
             System.Diagnostics.Debug.WriteLine($"合併後總共 {entries.Count} 筆操作紀錄（資料庫: {dbEntries.Count}, 本地檔案: {fileEntries.Count}）");
-
+            
             return entries;
         }
-
+        
         public static int GetDatabaseRecordCount()
         {
             try
@@ -281,7 +354,7 @@ namespace Test1
                 {
                     if (!File.Exists(InternalLogFilePath))
                         return;
-
+                    
                     var fileEntries = new List<OperationLogEntry>();
                     foreach (var line in File.ReadLines(InternalLogFilePath, Encoding.UTF8))
                     {
@@ -292,11 +365,6 @@ namespace Test1
                             var entry = JsonSerializer.Deserialize<OperationLogEntry>(line, SerializerOptions);
                             if (entry != null)
                             {
-                                if (entry.Timestamp == default(DateTime) || entry.Timestamp == DateTime.MinValue)
-                                    entry.Timestamp = DateTime.Now;
-                                if (string.IsNullOrEmpty(entry.HostName))
-                                    entry.HostName = Environment.MachineName;
-
                                 fileEntries.Add(entry);
                             }
                         }
@@ -304,33 +372,39 @@ namespace Test1
                         {
                         }
                     }
-
+                    
                     if (fileEntries.Count == 0)
                         return;
-
+                    
                     EnsureOperationLogsTableExists();
                     using var conn = new NpgsqlConnection(DbConnStr);
                     conn.Open();
-
+                    
+                    var hasActionTime = conn.ExecuteScalar<int>(
+                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'action_time'") > 0;
+                    
+                    string timeColumnName = hasActionTime ? "action_time" : "timestamp";
+                    
                     int successCount = 0;
                     foreach (var entry in fileEntries)
                     {
                         try
                         {
-                            if (entry.Timestamp == default(DateTime) || entry.Timestamp == DateTime.MinValue)
-                                entry.Timestamp = DateTime.Now;
-                            if (string.IsNullOrEmpty(entry.HostName))
-                                entry.HostName = Environment.MachineName;
-
+                            var timestamp = entry.Timestamp;
+                            if (timestamp == DateTime.MinValue || timestamp == default(DateTime))
+                            {
+                                timestamp = DateTime.Now;
+                            }
+                            
                             var existing = conn.QueryFirstOrDefault<int?>(
-                                "SELECT id FROM operation_logs WHERE timestamp = @Timestamp AND operation_type = @OperationType AND target = @Target",
-                                new { Timestamp = entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target });
-
+                                $"SELECT id FROM operation_logs WHERE {timeColumnName} = @Timestamp AND operation_type = @OperationType AND target = @Target",
+                                new { Timestamp = timestamp, OperationType = entry.OperationType, Target = entry.Target });
+                            
                             if (existing == null)
                             {
                                 conn.Execute(
-                                    "INSERT INTO operation_logs (timestamp, operation_type, target, detail, host_name) VALUES (@Timestamp, @OperationType, @Target, @Detail, @HostName)",
-                                    new { Timestamp = entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail, HostName = entry.HostName });
+                                    $"INSERT INTO operation_logs ({timeColumnName}, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
+                                    new { Timestamp = timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
                                 successCount++;
                             }
                         }
@@ -340,7 +414,7 @@ namespace Test1
                             System.Diagnostics.Debug.WriteLine($"操作類型: {entry.OperationType}, 目標: {entry.Target}, 時間: {entry.Timestamp}");
                         }
                     }
-
+                    
                     if (successCount > 0)
                     {
                         File.Delete(InternalLogFilePath);
@@ -353,22 +427,6 @@ namespace Test1
                 System.Diagnostics.Debug.WriteLine($"遷移本地檔案到資料庫失敗: {ex.Message}");
             }
         }
-
-        public static string DescribeChanges(PanelLog before, PanelLog after)
-        {
-            var changes = new List<string>();
-            if (before.Panel_ID != after.Panel_ID)
-                changes.Add($"PanelID: {before.Panel_ID} -> {after.Panel_ID}");
-            if (before.LOT_ID != after.LOT_ID)
-                changes.Add($"LOTID: {before.LOT_ID} -> {after.LOT_ID}");
-            if (before.Carrier_ID != after.Carrier_ID)
-                changes.Add($"CarrierID: {before.Carrier_ID} -> {after.Carrier_ID}");
-            if (before.Time != after.Time)
-                changes.Add($"Time: {before.Time:yyyy/MM/dd HH:mm:ss} -> {after.Time:yyyy/MM/dd HH:mm:ss}");
-
-            return changes.Count > 0 ? string.Join(", ", changes) : "未變更";
-        }
-
 
         public static void Clear()
         {
@@ -397,5 +455,3 @@ namespace Test1
         }
     }
 }
-
-

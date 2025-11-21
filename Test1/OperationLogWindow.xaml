@@ -73,9 +73,6 @@
                     <DataGridTextColumn Header="操作類型"
                                         Binding="{Binding OperationType}"
                                         Width="140"/>
-                    <DataGridTextColumn Header="操作電腦"
-                                        Binding="{Binding HostName}"
-                                        Width="160"/>
                     <DataGridTextColumn Header="被操作資料"
                                         Binding="{Binding Target}"
                                         Width="*"/>
