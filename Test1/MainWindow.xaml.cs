@@ -82,10 +82,14 @@ namespace Test1
                 Dispatcher.Invoke(UpdateTimeFromDb);
                 return;
             }
-            txtUpdateTime.Text = appConfig.LastUpdateTime.HasValue
-                ? "最後更新時間: " + appConfig.LastUpdateTime.Value.ToString("yyyy/MM/dd HH:mm:ss")
+            
+            var repo = (DataContext as PanelLogViewModel)?.Repo;
+            DateTime? lastDbTime = repo?.GetLastUpdateTimeFromDb();
+            txtUpdateTime.Text = lastDbTime.HasValue
+                ? "最後更新時間: " + lastDbTime.Value.ToString("yyyy/MM/dd HH:mm:ss")
                 : "尚未有資料更新";
         }
+
 
         private void SaveAndUpdateTime()
         {
@@ -359,9 +363,9 @@ namespace Test1
 
     public class PanelLogRepository
     {
-        private readonly string serverConnStr = "Host=172.20.10.2;Username=postgres;Password=1234;Database=postgres";
+        private readonly string serverConnStr = "Host=localhost;Username=postgres;Password=1234;Database=postgres";
         private readonly string dbName = "panellogdb";
-        private string DbConnStr => $"Host=172.20.10.2;Username=postgres;Password=1234;Database={dbName}";
+        private string DbConnStr => $"Host=localhost;Username=postgres;Password=1234;Database={dbName}";
 
         public PanelLogRepository()
         {
@@ -506,7 +510,7 @@ namespace Test1
         private string newCarrierId = "";
         public string NewCarrierID { get => newCarrierId; set { newCarrierId = value; OnPropertyChanged(nameof(NewCarrierID)); } }
 
-        public PanelLogViewModel(AppConfig config = null, bool createEmpty = false)
+        public PanelLogViewModel(AppConfig? config = null, bool createEmpty = false)
         {
             Logs = new ObservableCollection<PanelLog>();
             appConfig = config ?? new AppConfig();
