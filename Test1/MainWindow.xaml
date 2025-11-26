@@ -19,7 +19,7 @@
            HorizontalAlignment="Right"
            VerticalAlignment="Top"
            Margin="0,10,5,0"
-           FontSize="13"
+           FontSize="20"
            Foreground="#888"
            Grid.Row="0"/>
 
@@ -39,9 +39,6 @@
             
             <Button FontSize="18" Height="38" Width="140"
                     Content="查看操作紀錄" Click="ShowOperationLogWindow" Margin="0,0,8,0"
-                    Style="{StaticResource MaterialDesignRaisedButton}" Cursor="Hand"/>
-            <Button x:Name="btnSwitchUser" FontSize="17" Height="38" Width="120"
-                    Content="切換使用者" Click="SwitchUser_Click" Margin="0,0,6,0"
                     Style="{StaticResource MaterialDesignRaisedButton}" Cursor="Hand"/>
 
         </StackPanel>

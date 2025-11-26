@@ -36,8 +36,6 @@ namespace Test1
                 
                 var entries = OperationLogger.ReadAll().OrderBy(entry => entry.Timestamp).ToList();
                 
-                System.Diagnostics.Debug.WriteLine($"讀取到 {entries.Count} 筆操作紀錄");
-                
                 foreach (var entry in entries)
                 {
                     LogEntries.Add(entry);
@@ -54,13 +52,10 @@ namespace Test1
                     LogDataGrid.ScrollIntoView(LogEntries[^1]);
                 }
             }
-            catch (Exception ex)
+            catch
             {
                 LogEntries.Clear();
                 StatusText.Text = "讀取失敗";
-                System.Diagnostics.Debug.WriteLine($"讀取操作紀錄時發生錯誤: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"堆疊追蹤: {ex.StackTrace}");
-                MessageBox.Show($"讀取操作紀錄時發生錯誤：{ex.Message}\n\n詳細資訊請查看 Debug 輸出。", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
        
@@ -77,10 +72,8 @@ namespace Test1
                     OperationLogger.Log("查看紀錄", "OperationLogWindow", "清除操作紀錄");
                     LoadLog();
                 }
-                catch (Exception ex)
+                catch
                 {
-                    MessageBox.Show($"清除操作紀錄時發生錯誤：{ex.Message}", "錯誤",
-                        MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }

@@ -28,16 +28,8 @@ namespace Test1
             }
 
             var tempVm = new PanelLogViewModel(createEmpty: true);
-            try
-            {
-                InitializeComponent();
-                DataContext = tempVm;
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"視窗初始化失敗：{ex.Message}\n\n詳細資訊：{ex}\n\n應用程式將關閉。", "嚴重錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
-                throw;
-            }
+            InitializeComponent();
+            DataContext = tempVm;
             this.Loaded += MainWindow_Loaded;
             this.Closing += MainWindow_Closing;
         }
@@ -64,11 +56,10 @@ namespace Test1
                         UpdateTimeFromDb();
                     });
                 }
-                catch (Exception ex)
+                catch
                 {
                     Dispatcher.Invoke(() =>
                     {
-                        MessageBox.Show($"資料庫連接失敗：{ex.Message}\n\n應用程式將以離線模式運行。\n請確認 PostgreSQL 服務是否正在運行。", "資料庫錯誤", MessageBoxButton.OK, MessageBoxImage.Warning);
                         UpdateTimeFromDb();
                     });
                 }
@@ -161,34 +152,10 @@ namespace Test1
             }
         }
 
-        private void SwitchUser_Click(object sender, RoutedEventArgs e)
-        {
-            var login = new LoginWindow();
-            if (login.ShowDialog() == true)
-            {
-                var oldRole = userRole;
-                userRole = login.UserRole;
-                ApplyUserPermissions();
-                if (DataContext is PanelLogViewModel vm)
-                {
-                    vm.UserRole = userRole;
-                }
-                MessageBox.Show($"已切換使用者，角色：{userRole}", "切換成功", MessageBoxButton.OK, MessageBoxImage.Information);
-                OperationLogger.Log("切換使用者", $"使用者:{oldRole}->{userRole}", $"切換時間={DateTime.Now:yyyy/MM/dd HH:mm:ss}");
-            }
-        }
-
         private void ShowOperationLogWindow(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                var logWindow = new OperationLogWindow { Owner = this };
-                logWindow.ShowDialog();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"無法開啟操作紀錄視窗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+            var logWindow = new OperationLogWindow { Owner = this };
+            logWindow.ShowDialog();
         }
 
         private void ImportExcel_Click(object sender, RoutedEventArgs e)
@@ -208,11 +175,10 @@ namespace Test1
                 try
                 {
                     var vm = DataContext as PanelLogViewModel;
-                    if (vm?.Repo == null)
-                    {
-                        MessageBox.Show("無法取得資料模型或資料庫未連接。", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
-                        return;
-                    }
+                        if (vm?.Repo == null)
+                        {
+                            return;
+                        }
                     var fi = new FileInfo(ofd.FileName);
                     using (var package = new ExcelPackage(fi))
                     {
@@ -256,10 +222,9 @@ namespace Test1
                                 vm.Repo.AddPanelLog(logTime, panelId, lotId, carrierId);
                                 successCount++;
                             }
-                            catch (Exception ex)
+                            catch
                             {
                                 skipCount++;
-                                MessageBox.Show($"第{row}行匯入異常：{ex.Message}", "匯入錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
                             }
                         }
 
@@ -272,9 +237,8 @@ namespace Test1
                             successCount > 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
                     }
                 }
-                catch (Exception ex)
+                catch
                 {
-                    MessageBox.Show($"匯入失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -292,14 +256,8 @@ namespace Test1
                 try
                 {
                     var vm = DataContext as PanelLogViewModel;
-                    if (vm?.Logs == null)
+                    if (vm?.Logs == null || vm.Logs.Count == 0)
                     {
-                        MessageBox.Show("無法取得資料。", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
-                        return;
-                    }
-                    if (vm.Logs.Count == 0)
-                    {
-                        MessageBox.Show("沒有資料可匯出！", "提醒", MessageBoxButton.OK, MessageBoxImage.Information);
                         return;
                     }
 
@@ -328,15 +286,13 @@ namespace Test1
                         ws.Cells.AutoFitColumns();
                         package.Save();
                     }
-
-                    MessageBox.Show($"匯出成功");
+                    MessageBox.Show("匯出成功");
                     SaveAndUpdateTime();
                     OperationLogger.Log("匯出", $"{sfd.FileName}",
                         $"匯出筆數={vm.Logs.Count}");
                 }
-                catch (Exception ex)
+                catch
                 {
-                    MessageBox.Show($"匯出失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -386,9 +342,9 @@ namespace Test1
 
     public class PanelLogRepository
     {
-        private readonly string serverConnStr = "Host=192.168.43.93;Username=postgres;Password=1234;Database=postgres";
+        private readonly string serverConnStr = "Host=172.20.10.2;Username=postgres;Password=1234;Database=postgres";
         private readonly string dbName = "panellogdb";
-        private string DbConnStr => $"Host=192.168.43.93;Username=postgres;Password=1234;Database={dbName}";
+        private string DbConnStr => $"Host=172.20.10.2;Username=postgres;Password=1234;Database={dbName}";
 
         public PanelLogRepository()
         {
@@ -565,7 +521,7 @@ namespace Test1
                             $"Time={now:yyyy/MM/dd HH:mm:ss}, PanelID={pid},LotID={lid},CarrierID={cid}");
                         NewPanelID = ""; NewLotID = ""; NewCarrierID = "";
                     }
-                    catch (Exception ex) { MessageBox.Show($"新增資料失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error); }
+                    catch { }
                 }
             });
 
@@ -602,9 +558,8 @@ namespace Test1
                             DataUpdated?.Invoke(this, EventArgs.Empty);
                             MessageBox.Show("刪除成功", "訊息", MessageBoxButton.OK, MessageBoxImage.Information);
                         }
-                        catch (Exception ex)
+                        catch
                         {
-                            MessageBox.Show($"刪除資料失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
                         }
                     }
                 }
@@ -639,9 +594,8 @@ namespace Test1
                             DataUpdated?.Invoke(this, EventArgs.Empty);
                             MessageBox.Show("刪除成功");
                         }
-                        catch (Exception ex)
+                        catch
                         {
-                            MessageBox.Show($"刪除資料失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
                         }
                     }
                 }
@@ -676,7 +630,7 @@ namespace Test1
                                 OperationLogger.Log("修改", $"PanelID={edited.Panel_ID}", detail);
                                 DataUpdated?.Invoke(this, EventArgs.Empty);
                             }
-                            catch (Exception ex) { MessageBox.Show($"修改資料失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error); }
+                            catch { }
                         }
                     }
                 }
@@ -694,7 +648,7 @@ namespace Test1
                 OperationLogger.Log("新增", $"PanelID={item.Panel_ID}",
                             $"Time={item.Time:yyyy/MM/dd HH:mm:ss} \nPanelID={item.Panel_ID} \nLotID={item.LOT_ID} \nCarrierID={item.Carrier_ID}");
             }
-            catch (Exception ex) { MessageBox.Show($"新增資料失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error); }
+            catch { }
         }
 
         public void Reload()
@@ -705,9 +659,8 @@ namespace Test1
                 Logs = repo.GetAllLogs();
                 OnPropertyChanged(nameof(Logs));
             }
-            catch (Exception ex)
+            catch
             {
-                MessageBox.Show($"重新載入資料失敗：{ex.Message}", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             (Application.Current.MainWindow as MainWindow)?.UpdateTimeFromDb();
         }
@@ -736,7 +689,3 @@ namespace Test1
         }
     }
 }
-
-
-
-

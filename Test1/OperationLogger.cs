@@ -33,7 +33,7 @@ namespace Test1
             WriteIndented = false
         };
 
-        private static readonly string DbConnStr = "Host=192.168.43.93;Username=postgres;Password=1234;Database=panellogdb";
+        private static readonly string DbConnStr = "Host=172.20.10.2;Username=postgres;Password=1234;Database=panellogdb";
 
         private static void EnsureOperationLogsTableExists()
         {
@@ -66,14 +66,7 @@ namespace Test1
                     
                     if (!hasTimestamp && hasActionTime)
                     {
-                        try
-                        {
-                            conn.Execute("ALTER TABLE operation_logs RENAME COLUMN action_time TO timestamp");
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"重命名 action_time 到 timestamp 失敗: {ex.Message}");
-                        }
+                        conn.Execute("ALTER TABLE operation_logs RENAME COLUMN action_time TO timestamp");
                     }
                     else if (!hasTimestamp)
                     {
@@ -121,9 +114,8 @@ namespace Test1
                     }
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                System.Diagnostics.Debug.WriteLine($"確保操作紀錄表存在失敗: {ex.Message}");
             }
         }
 
@@ -154,7 +146,6 @@ namespace Test1
 
             bool dbSuccess = false;
             
-            
             try
             {
                 EnsureOperationLogsTableExists();
@@ -171,9 +162,8 @@ namespace Test1
                     new { entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
                 dbSuccess = true;
             }
-            catch (Exception ex)
+            catch
             {
-                System.Diagnostics.Debug.WriteLine($"資料庫寫入操作紀錄失敗: {ex.Message}");
             }
             
             if (!dbSuccess)
@@ -223,13 +213,9 @@ namespace Test1
                     ORDER BY {timeColumnName} ASC";
                 
                 dbEntries = conn.Query<OperationLogEntry>(sql).ToList();
-                
-                System.Diagnostics.Debug.WriteLine($"從資料庫讀取到 {dbEntries.Count} 筆操作紀錄");
             }
-            catch (Exception ex)
+            catch
             {
-                System.Diagnostics.Debug.WriteLine($"資料庫讀取操作紀錄失敗: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"堆疊追蹤: {ex.StackTrace}");
             }
             
             try
@@ -310,23 +296,17 @@ namespace Test1
                                 $"INSERT INTO operation_logs ({timeColumnName}, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
                                 new { Timestamp = timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
                         }
-                        catch (Exception ex)
+                        catch
                         {
-                            System.Diagnostics.Debug.WriteLine($"遷移操作紀錄失敗: {ex.Message}");
-                            System.Diagnostics.Debug.WriteLine($"操作類型: {entry.OperationType}, 目標: {entry.Target}, 時間: {entry.Timestamp}");
                         }
                     }
-                    System.Diagnostics.Debug.WriteLine($"成功遷移 {entriesToMigrate.Count} 筆本地檔案紀錄到資料庫");
                 }
-                catch (Exception ex)
+                catch
                 {
-                    System.Diagnostics.Debug.WriteLine($"批量遷移操作紀錄失敗: {ex.Message}");
                 }
             }
             
             entries = allEntries.Values.OrderBy(e => e.Timestamp).ToList();
-            
-            System.Diagnostics.Debug.WriteLine($"合併後總共 {entries.Count} 筆操作紀錄（資料庫: {dbEntries.Count}, 本地檔案: {fileEntries.Count}）");
             
             return entries;
         }
@@ -408,23 +388,19 @@ namespace Test1
                                 successCount++;
                             }
                         }
-                        catch (Exception ex)
+                        catch
                         {
-                            System.Diagnostics.Debug.WriteLine($"遷移單筆操作紀錄失敗: {ex.Message}");
-                            System.Diagnostics.Debug.WriteLine($"操作類型: {entry.OperationType}, 目標: {entry.Target}, 時間: {entry.Timestamp}");
                         }
                     }
                     
                     if (successCount > 0)
                     {
                         File.Delete(InternalLogFilePath);
-                        System.Diagnostics.Debug.WriteLine($"成功遷移 {successCount} 筆本地檔案紀錄到資料庫，並刪除本地檔案");
                     }
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                System.Diagnostics.Debug.WriteLine($"遷移本地檔案到資料庫失敗: {ex.Message}");
             }
         }
 

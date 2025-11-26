@@ -11,35 +11,24 @@
     <Grid Margin="30,10,30,3">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="40"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="40"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="40"/>
         </Grid.RowDefinitions>
 
-        <!-- 帳號提示 -->
-        <TextBlock Text="請輸入帳號：" 
-                   FontSize="18" 
+        <!-- 電腦名稱顯示 -->
+        <TextBlock x:Name="ComputerNameTextBlock"
+                   Grid.Row="0"
+                   FontSize="16" 
                    FontWeight="SemiBold" 
-                   Foreground="#333333" 
+                   Foreground="#666666" 
                    HorizontalAlignment="Center"
-                   Margin="0,0,0,15"/>
-        
-        <TextBox x:Name="UsernameTextBox"
-                 Grid.Row="1"
-                 FontSize="18"
-                 Padding="10,2,10,2"
-                 Width="230"
-                 HorizontalAlignment="Center"
-                 BorderBrush="#888"
-                 BorderThickness="1"
-                 Background="White"
-                 VerticalContentAlignment="Center"/>
+                   Margin="0,0,0,20"/>
 
         <!-- 密碼提示 -->
         <TextBlock Text="請輸入密碼：" 
-                   Grid.Row="2"
+                   Grid.Row="1"
                    FontSize="18" 
                    FontWeight="SemiBold" 
                    Foreground="#333333" 
@@ -47,7 +36,7 @@
                    Margin="0,0,0,15"/>
         <!-- 密碼輸入框 -->
         <PasswordBox x:Name="PasswordBox" 
-                     Grid.Row="3"
+                     Grid.Row="2"
                      FontSize="22" 
                      Padding="10,2,10,0"
                      Width="230"
@@ -59,7 +48,7 @@
 
         
         <Button x:Name="LoginButton"
-                Grid.Row="5" 
+                Grid.Row="4" 
                 Content="登入"
                 Width="120" 
                 HorizontalAlignment="Center"
