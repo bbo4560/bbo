@@ -18,7 +18,7 @@ namespace Test1
                 bool? loginResult = login.ShowDialog();
                 if (loginResult == true)
                 {
-                    var main = new MainWindow(login.UserRole);
+                    var main = new MainWindow();
                     this.MainWindow = main;
                     main.Show();
                 }

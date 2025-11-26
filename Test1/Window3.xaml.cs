@@ -9,13 +9,12 @@ namespace Test1
 		public ObservableCollection<PanelLog> SearchResults { get; set; } = new ObservableCollection<PanelLog>();
 		public PanelLog? SelectedResult { get; set; }
 		public PanelLog? ResultLog { get; private set; }
-		public ICommand DeleteCommand { get; }
-		public ICommand EditCommand { get; }
+        public ICommand DeleteCommand { get; }
+        public ICommand EditCommand { get; }
         public ICommand DeleteMultipleCommand { get; }
-        private string? userRole;
 
-        public bool CanEdit => userRole == "Admin";
-        public bool CanDelete => userRole == "Admin";
+        public bool CanEdit => true;
+        public bool CanDelete => true;
 
         public Window3()
 		{
@@ -29,12 +28,6 @@ namespace Test1
 
         private void Window3_Loaded(object sender, RoutedEventArgs e)
         {
-            if (Owner is MainWindow mw && mw.DataContext is PanelLogViewModel vm)
-            {
-                userRole = vm.UserRole;
-                OnPropertyChanged(nameof(CanEdit));
-                OnPropertyChanged(nameof(CanDelete));
-            }
             PanelIDTextBox.Focus();
         }
 
@@ -45,11 +38,6 @@ namespace Test1
         }
         private void DeleteMultipleLogs(object? parameter)
         {
-            if (userRole != "Admin")
-            {
-                MessageBox.Show("您沒有權限執行此操作。", "權限不足", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
             if (parameter is System.Collections.IList selected && selected.Count > 0)
             {
                 var pwdWindow = new AdminPasswordWindow
@@ -148,11 +136,6 @@ namespace Test1
 
         private void DeletePanelLog(object? parameter)
         {
-            if (userRole != "Admin")
-            {
-                MessageBox.Show("您沒有權限執行此操作。", "權限不足", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
             var log = parameter as PanelLog;
             if (log == null) return;
 
@@ -192,11 +175,6 @@ namespace Test1
 
         private void EditPanelLog(object? parameter)
 		{
-            if (userRole != "Admin")
-            {
-                MessageBox.Show("您沒有權限執行此操作。", "權限不足", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
 			var log = parameter as PanelLog;
 			if (log == null) return;
 			var wnd = new Window2(log);

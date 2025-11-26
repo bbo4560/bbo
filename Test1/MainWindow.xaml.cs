@@ -16,11 +16,9 @@ namespace Test1
     {
         private DateTime lastUpdateTime = DateTime.MinValue;
         private AppConfig appConfig;
-        private string? userRole;
 
-        public MainWindow(string? role = null)
+        public MainWindow()
         {
-            userRole = role;
             appConfig = AppConfig.Load();
             if (appConfig.LastUpdateTime.HasValue)
             {
@@ -46,7 +44,6 @@ namespace Test1
                     Dispatcher.Invoke(() =>
                     {
                         DataContext = vm;
-                        vm.UserRole = userRole;
                         vm.DataUpdated += (s, e) => SaveAndUpdateTime();
                         ApplyUserPermissions();
                         if (!dbConnected)
@@ -93,26 +90,9 @@ namespace Test1
 
         private void ApplyUserPermissions()
         {
-            bool isAdmin = userRole == "Admin";
-            bool isUser = userRole == "User";
-
-            if (isUser)
-            {
-                btnAdd.IsEnabled = false;
-                btnImport.IsEnabled = false;
-                LogsDataGrid.IsReadOnly = true;
-            }
-            else if (isAdmin)
-            {
-                btnAdd.IsEnabled = true;
-                btnImport.IsEnabled = true;
-                LogsDataGrid.IsReadOnly = false;
-            }
-
-            if (DataContext is PanelLogViewModel vm)
-            {
-                vm.UserRole = userRole;
-            }
+            btnAdd.IsEnabled = true;
+            btnImport.IsEnabled = true;
+            LogsDataGrid.IsReadOnly = false;
         }
 
         private void MainWindow_Closing(object? sender, CancelEventArgs e)
@@ -133,11 +113,6 @@ namespace Test1
 
         private void OpenAddWindow(object sender, RoutedEventArgs e)
         {
-            if (userRole != "Admin")
-            {
-                MessageBox.Show("您沒有權限執行此操作。", "權限不足", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
             var dialog = new Window1 { Owner = this };
             if (dialog.ShowDialog() == true)
             {
@@ -160,11 +135,6 @@ namespace Test1
 
         private void ImportExcel_Click(object sender, RoutedEventArgs e)
         {
-            if (userRole != "Admin")
-            {
-                MessageBox.Show("您沒有權限執行此操作。", "權限不足", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
             var ofd = new OpenFileDialog
             {
                 Filter = "Excel 檔案 (*.xlsx)|*.xlsx|所有檔案 (*.*)|*.*",
@@ -460,15 +430,8 @@ namespace Test1
             set { _selectedLog = value; OnPropertyChanged(nameof(SelectedLog)); }
         }
 
-        private string? _userRole;
-        public string? UserRole
-        {
-            get => _userRole;
-            set { _userRole = value; OnPropertyChanged(nameof(UserRole)); OnPropertyChanged(nameof(CanEdit)); OnPropertyChanged(nameof(CanDelete)); }
-        }
-
-        public bool CanEdit => _userRole == "Admin";
-        public bool CanDelete => _userRole == "Admin";
+        public bool CanEdit => true;
+        public bool CanDelete => true;
 
         public ICommand AddLogCommand { get; }
         public ICommand DeleteLogCommand { get; }
@@ -508,7 +471,6 @@ namespace Test1
 
             AddLogCommand = new RelayCommand(_ =>
             {
-                if (_userRole != "Admin") { MessageBox.Show("您沒有權限執行此操作。", "權限不足", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
                 if (repo == null) { MessageBox.Show("資料庫未連接，無法新增資料。", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error); return; }
                 if (int.TryParse(NewPanelID, out var pid) && int.TryParse(NewLotID, out var lid) && int.TryParse(NewCarrierID, out var cid))
                 {
@@ -527,7 +489,6 @@ namespace Test1
 
             DeleteMultipleLogsCommand = new RelayCommand(param =>
             {
-                if (_userRole != "Admin") { MessageBox.Show("您沒有權限執行此操作。", "權限不足", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
                 if (repo == null)
                 {
                     MessageBox.Show("資料庫未連接，無法刪除資料。", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -567,7 +528,6 @@ namespace Test1
 
             DeleteLogCommand = new RelayCommand(param =>
             {
-                if (_userRole != "Admin") { MessageBox.Show("您沒有權限執行此操作。", "權限不足", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
                 if (repo == null)
                 {
                     MessageBox.Show("資料庫未連接，無法刪除資料。", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -603,7 +563,6 @@ namespace Test1
 
             UpdateLogCommand = new RelayCommand(param =>
             {
-                if (_userRole != "Admin") { MessageBox.Show("您沒有權限執行此操作。", "權限不足", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
                 if (repo == null) { MessageBox.Show("資料庫未連接，無法修改資料。", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error); return; }
                 if (param is PanelLog log)
                 {
@@ -639,7 +598,6 @@ namespace Test1
 
         public void AddPanelLogFromOther(PanelLog item)
         {
-            if (_userRole != "Admin") { MessageBox.Show("您沒有權限執行此操作。", "權限不足", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             if (repo == null) { MessageBox.Show("資料庫未連接，無法新增資料。", "錯誤", MessageBoxButton.OK, MessageBoxImage.Error); return; }
             try
             {

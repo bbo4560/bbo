@@ -5,7 +5,6 @@ namespace Test1
 {
     public partial class LoginWindow : Window
     {
-        public string? UserRole { get; private set; }
         private string computerName;
 
         public LoginWindow()
@@ -33,13 +32,6 @@ namespace Test1
 
             if (password == AuthConfig.AdminPassword)
             {
-                UserRole = "Admin";
-                DialogResult = true;
-                Close();
-            }
-            else if (password == AuthConfig.UserPassword)
-            {
-                UserRole = "User";
                 DialogResult = true;
                 Close();
             }
