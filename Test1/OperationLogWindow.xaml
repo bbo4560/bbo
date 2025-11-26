@@ -70,6 +70,9 @@
                     <DataGridTextColumn Header="操作時間"
                                         Binding="{Binding Timestamp, StringFormat=yyyy/MM/dd HH:mm:ss}"
                                         Width="200"/>
+                    <DataGridTextColumn Header="操作電腦"
+                                        Binding="{Binding ComputerName}"
+                                        Width="150"/>
                     <DataGridTextColumn Header="操作類型"
                                         Binding="{Binding OperationType}"
                                         Width="140"/>

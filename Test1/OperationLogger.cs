@@ -15,6 +15,7 @@ namespace Test1
         {
             public int Id { get; set; }
             public DateTime Timestamp { get; set; }
+            public string ComputerName { get; set; } = string.Empty;
             public string OperationType { get; set; } = string.Empty;
             public string Target { get; set; } = string.Empty;
             public string? Detail { get; set; }
@@ -50,6 +51,7 @@ namespace Test1
                     string sql = @"CREATE TABLE operation_logs (
                                    id SERIAL PRIMARY KEY,
                                    timestamp TIMESTAMP NOT NULL,
+                                   computer_name VARCHAR(100) NOT NULL,
                                    operation_type VARCHAR(100) NOT NULL,
                                    target TEXT NOT NULL,
                                    detail TEXT
@@ -112,6 +114,16 @@ namespace Test1
                     {
                         conn.Execute("ALTER TABLE operation_logs ADD COLUMN detail TEXT");
                     }
+                    
+                    var hasComputerName = conn.ExecuteScalar<int>(
+                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'operation_logs' AND column_name = 'computer_name'") > 0;
+                    
+                    if (!hasComputerName)
+                    {
+                        conn.Execute("ALTER TABLE operation_logs ADD COLUMN computer_name VARCHAR(100)");
+                        conn.Execute("UPDATE operation_logs SET computer_name = '' WHERE computer_name IS NULL");
+                        conn.Execute("ALTER TABLE operation_logs ALTER COLUMN computer_name SET NOT NULL");
+                    }
                 }
             }
             catch
@@ -139,6 +151,7 @@ namespace Test1
             var entry = new OperationLogEntry
             {
                 Timestamp = timestamp ?? DateTime.Now,
+                ComputerName = Environment.MachineName,
                 OperationType = operationType,
                 Target = target,
                 Detail = detail
@@ -158,8 +171,8 @@ namespace Test1
                 string timeColumnName = hasActionTime ? "action_time" : "timestamp";
                 
                 conn.Execute(
-                    $"INSERT INTO operation_logs ({timeColumnName}, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
-                    new { entry.Timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
+                    $"INSERT INTO operation_logs ({timeColumnName}, computer_name, operation_type, target, detail) VALUES (@Timestamp, @ComputerName, @OperationType, @Target, @Detail)",
+                    new { entry.Timestamp, ComputerName = entry.ComputerName, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
                 dbSuccess = true;
             }
             catch
@@ -206,6 +219,7 @@ namespace Test1
                 var sql = $@"SELECT 
                     id AS Id,
                     {timeColumnName} AS Timestamp,
+                    COALESCE(computer_name, '') AS ComputerName,
                     operation_type AS OperationType,
                     target AS Target,
                     detail AS Detail
@@ -292,9 +306,10 @@ namespace Test1
                                 timestamp = DateTime.Now;
                             }
                             
+                            var computerName = string.IsNullOrEmpty(entry.ComputerName) ? Environment.MachineName : entry.ComputerName;
                             conn.Execute(
-                                $"INSERT INTO operation_logs ({timeColumnName}, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
-                                new { Timestamp = timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
+                                $"INSERT INTO operation_logs ({timeColumnName}, computer_name, operation_type, target, detail) VALUES (@Timestamp, @ComputerName, @OperationType, @Target, @Detail)",
+                                new { Timestamp = timestamp, ComputerName = computerName, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
                         }
                         catch
                         {
@@ -382,9 +397,10 @@ namespace Test1
                             
                             if (existing == null)
                             {
+                                var computerName = string.IsNullOrEmpty(entry.ComputerName) ? Environment.MachineName : entry.ComputerName;
                                 conn.Execute(
-                                    $"INSERT INTO operation_logs ({timeColumnName}, operation_type, target, detail) VALUES (@Timestamp, @OperationType, @Target, @Detail)",
-                                    new { Timestamp = timestamp, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
+                                    $"INSERT INTO operation_logs ({timeColumnName}, computer_name, operation_type, target, detail) VALUES (@Timestamp, @ComputerName, @OperationType, @Target, @Detail)",
+                                    new { Timestamp = timestamp, ComputerName = computerName, OperationType = entry.OperationType, Target = entry.Target, Detail = entry.Detail });
                                 successCount++;
                             }
                         }
