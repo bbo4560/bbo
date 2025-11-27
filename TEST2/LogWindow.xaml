@@ -1,0 +1,17 @@
+<Window x:Class="TEST2.LogWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="操作紀錄" Height="600" Width="900" WindowStartupLocation="CenterOwner" Background="#F0F2F5">
+    <Grid Margin="10">
+        <DataGrid x:Name="logGrid" AutoGenerateColumns="False" CanUserAddRows="False" CanUserReorderColumns="False" IsReadOnly="True">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="操作時間" Binding="{Binding OperationTime, StringFormat='yyyy/MM/dd HH:mm:ss'}" Width="180"/>
+                <DataGridTextColumn Header="操作電腦名稱" Binding="{Binding MachineName}" Width="150"/>
+                <DataGridTextColumn Header="操作類型" Binding="{Binding OperationType}" Width="100"/>
+                <DataGridTextColumn Header="被操作資料" Binding="{Binding AffectedData}" Width="200"/>
+                <DataGridTextColumn Header="詳細描述" Binding="{Binding DetailDescription}" Width="*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</Window>
+

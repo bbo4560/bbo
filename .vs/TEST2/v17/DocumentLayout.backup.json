@@ -1,0 +1,74 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\bbo05\\source\\repos\\TEST2\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{4360E1DB-FB81-458B-86C0-F4E457A01442}|TEST2\\TEST2.csproj|c:\\users\\bbo05\\source\\repos\\test2\\test2\\databaseservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4360E1DB-FB81-458B-86C0-F4E457A01442}|TEST2\\TEST2.csproj|solutionrelative:test2\\databaseservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4360E1DB-FB81-458B-86C0-F4E457A01442}|TEST2\\TEST2.csproj|c:\\users\\bbo05\\source\\repos\\test2\\test2\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4360E1DB-FB81-458B-86C0-F4E457A01442}|TEST2\\TEST2.csproj|solutionrelative:test2\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4360E1DB-FB81-458B-86C0-F4E457A01442}|TEST2\\TEST2.csproj|c:\\users\\bbo05\\source\\repos\\test2\\test2\\mainwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{4360E1DB-FB81-458B-86C0-F4E457A01442}|TEST2\\TEST2.csproj|solutionrelative:test2\\mainwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 1,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedHeight": 357,
+          "SelectedChildIndex": 2,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "MainWindow.xaml",
+              "DocumentMoniker": "C:\\Users\\bbo05\\source\\repos\\TEST2\\TEST2\\MainWindow.xaml",
+              "RelativeDocumentMoniker": "TEST2\\MainWindow.xaml",
+              "ToolTip": "C:\\Users\\bbo05\\source\\repos\\TEST2\\TEST2\\MainWindow.xaml",
+              "RelativeToolTip": "TEST2\\MainWindow.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2025-11-27T08:19:29.391Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "DatabaseService.cs",
+              "DocumentMoniker": "C:\\Users\\bbo05\\source\\repos\\TEST2\\TEST2\\DatabaseService.cs",
+              "RelativeDocumentMoniker": "TEST2\\DatabaseService.cs",
+              "ToolTip": "C:\\Users\\bbo05\\source\\repos\\TEST2\\TEST2\\DatabaseService.cs",
+              "RelativeToolTip": "TEST2\\DatabaseService.cs",
+              "ViewState": "AgIAALAAAAAAAAAAAADwv7sAAAAxAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-27T03:14:48.708Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "MainWindow.xaml.cs",
+              "DocumentMoniker": "C:\\Users\\bbo05\\source\\repos\\TEST2\\TEST2\\MainWindow.xaml.cs",
+              "RelativeDocumentMoniker": "TEST2\\MainWindow.xaml.cs",
+              "ToolTip": "C:\\Users\\bbo05\\source\\repos\\TEST2\\TEST2\\MainWindow.xaml.cs",
+              "RelativeToolTip": "TEST2\\MainWindow.xaml.cs",
+              "ViewState": "AgIAANkAAAAAAAAAAAAUwGkAAAAtAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-27T03:07:37.295Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
